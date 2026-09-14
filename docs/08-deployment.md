@@ -1,0 +1,53 @@
+# 本地运行与 GitHub Pages 发布准备
+
+## 当前状态
+
+项目仓库已建立为私有仓库，便于账号本人多设备同步。目前不包含已发布的 Pages 网站。
+
+仓库：https://github.com/jiuxiaoyijian/mora-fireline
+
+## 开发与验证
+
+使用 `.nvmrc` 指定的 Node 24.13.1，先安装锁定依赖：
+
+```sh
+npm ci
+npm run dev
+```
+
+依次执行验证与生产构建：
+
+```sh
+npm test
+npm run build
+npm run preview
+```
+
+`npm test` 使用 Node 原生测试运行器，覆盖规则与完整模拟场景。`npm run build` 先类型检查，再生成 `dist/`。
+
+## 静态部署设计
+
+- 游戏全部逻辑在浏览器中执行；不依赖后端、密钥或远程模型服务。
+- Vite `base: './'` 让构建资产使用相对路径，适配 Pages 仓库子路径。
+- 没有客户端多页面路由，避免子路由刷新 404。
+- 所有场景模型由代码生成，依赖随构建打包；不在运行时从第三方 CDN 取资源。
+- 布局保存在浏览器 `localStorage` 中。Git 同步源代码与文档，不同步浏览器游戏存档。
+
+## 发布时的操作
+
+1. 确定仓库可见性：GitHub Free 的 Pages 需要公开仓库；支持私有仓库 Pages 的付费方案请按账号实际情况核实。私有仓库不代表 Pages 网站一定私有。
+2. 用户确定公开范围后，在仓库 Settings → Pages 中选择 GitHub Actions。
+3. 将 [工作流模板](deployment/pages.yml) 放入 `.github/workflows/pages.yml` 并提交。当前模板留在文档目录，不会自动执行或发布。
+4. 确认 GitHub 登录具备提交 workflow 文件所需权限。如果 GitHub 拒绝，按照服务提示通过官方登录流程补充授权，不复制令牌到聊天。
+5. 在 Actions 中执行工作流，检查成功后实际返回的部署 URL。
+6. 通过无痕窗口检查正式 URL：资源正常加载、完整运行一轮、修改布局再运行、刷新与暂停正常。
+7. 验收完成后更新 README 的游玩链接与状态。
+
+项目预期的默认 Pages 路径是 `https://jiuxiaoyijian.github.io/mora-fireline/`，这只是待发布路径，当前不能当作可玩链接。
+
+## 参考
+
+- [GitHub Pages 可用范围](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
+- [Vite 静态发布](https://vite.dev/guide/static-deploy)
+
+核对日期：2026-09-15。

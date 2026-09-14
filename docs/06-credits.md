@@ -9,16 +9,20 @@
 - Codex：本次对话中的题目分析、方案整理和开发辅助。
 - 后续若使用其他生成工具，在实际使用后补充名称与用途。
 
-## 计划依赖（尚待安装）
+## 已安装的直接依赖
 
-| 项目 | 用途 | 官方来源 | 许可证 |
+| 项目 / 本次安装版本 | 用途 | 官方来源 | 许可证 |
 | --- | --- | --- | --- |
-| Three.js | 3D 渲染 | https://github.com/mrdoob/three.js | MIT，安装时核对 |
-| Vite | 开发与静态构建 | https://github.com/vitejs/vite | MIT，安装时核对 |
-| TypeScript | 类型检查 | https://github.com/microsoft/TypeScript | Apache-2.0，安装时核对 |
+| Three.js 0.186.0 | 3D 渲染 | https://github.com/mrdoob/three.js | MIT |
+| Vite 8.3.0 | 开发与静态构建 | https://github.com/vitejs/vite | MIT |
+| TypeScript 5.9.3 | 类型检查 | https://github.com/microsoft/TypeScript | Apache-2.0 |
+| @types/three 0.183.1 | Three.js 类型 | https://github.com/DefinitelyTyped/DefinitelyTyped | MIT |
+| @types/node 24.13.4 | Node 类型 | https://github.com/DefinitelyTyped/DefinitelyTyped | MIT |
 
-实际版本以锁文件为准。后续新增库及时补充。
+许可证已核对已安装包的元数据。实际版本与间接依赖以 `package-lock.json` 为准。后续新增库及时补充。
 
 ## 游戏素材
 
-尚未使用外部模型、纹理、图标或音频。计划以代码生成几何模型；如后续引入外部素材，记录作者、来源、许可证和修改情况。
+住宅、草木、消防站、火焰、防火带、地板和边界由 Three.js 基础几何生成；UI 图标为项目内 SVG 路径；坐标文字由 Canvas 生成。未使用外部模型、纹理、字体或音频文件。
+
+代码与文档由本次用户与 Codex 协作产生；尚未为项目自身选择开源许可证。

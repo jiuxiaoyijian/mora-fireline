@@ -10,7 +10,7 @@
 
 ## 首次在另一台设备上使用
 
-安装 Git、GitHub CLI 和与项目 `.nvmrc` 一致的 Node.js（原型阶段添加版本文件）。在你自己的终端完成 GitHub 登录：
+安装 Git、GitHub CLI 和与项目 `.nvmrc` 一致的 Node.js 24.13.1。在你自己的终端完成 GitHub 登录：
 
 ```sh
 gh auth login
@@ -18,7 +18,7 @@ gh repo clone jiuxiaoyijian/mora-fireline
 cd mora-fireline
 ```
 
-原型的 `package.json` 与锁文件提交后，再运行：
+安装锁定依赖并运行：
 
 ```sh
 npm ci
@@ -55,7 +55,7 @@ git push -u origin HEAD
 
 ## 给下一台设备上的 AI
 
-先读 `README.md`、`AGENTS.md`、`docs/02-decisions.md`、`docs/04-devlog.md` 和实际规则文档（建立后为 `docs/07-rules.md`），再检查 Git 状态。继续处理记录中的未完成事项，不把原始提案当作已经实现的功能。
+先读 `README.md`、`AGENTS.md`、`docs/02-decisions.md`、`docs/04-devlog.md` 和实际规则文档 `docs/07-rules.md`，再检查 Git 状态。继续处理记录中的未完成事项，不把原始提案当作已经实现的功能。
 
 ## GitHub Pages 发布阶段
 
