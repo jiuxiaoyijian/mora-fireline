@@ -1,0 +1,164 @@
+{
+  "scope": "Current fixed map, default 12 houses unchanged. All 24 single-station sites, 276 pairs, and 64 subsets of the western B2–B7 firebreak line. Not an exhaustive search over all house relocations or mixed defenses.",
+  "baseline": {
+    "spent": 0,
+    "saved": 0,
+    "destroyed": 12,
+    "burning": 0,
+    "success": false,
+    "firstHouseIgnition": 3.7,
+    "lastHouseIgnition": 9.6,
+    "lastHouseDestruction": 19.6,
+    "lastSavedCountChange": 9.6,
+    "cutoff": 45
+  },
+  "fullWesternBreak": {
+    "spent": 6,
+    "saved": 12,
+    "destroyed": 0,
+    "burning": 0,
+    "success": true,
+    "firstHouseIgnition": null,
+    "lastHouseIgnition": null,
+    "lastHouseDestruction": null,
+    "lastSavedCountChange": 0,
+    "cutoff": 45
+  },
+  "singleStation": {
+    "total": 24,
+    "histogram": {
+      "0": 13,
+      "1": 6,
+      "2": 3,
+      "3": 2
+    },
+    "best": [
+      {
+        "position": "B3",
+        "spent": 4,
+        "saved": 3,
+        "destroyed": 9,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 6.1,
+        "lastHouseIgnition": 17,
+        "lastHouseDestruction": 27,
+        "lastSavedCountChange": 17,
+        "cutoff": 45
+      },
+      {
+        "position": "D2",
+        "spent": 4,
+        "saved": 3,
+        "destroyed": 9,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 4.3,
+        "lastHouseIgnition": 16,
+        "lastHouseDestruction": 26,
+        "lastSavedCountChange": 16,
+        "cutoff": 45
+      },
+      {
+        "position": "B4",
+        "spent": 4,
+        "saved": 2,
+        "destroyed": 10,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 9.6,
+        "lastHouseIgnition": 16,
+        "lastHouseDestruction": 26,
+        "lastSavedCountChange": 16,
+        "cutoff": 45
+      },
+      {
+        "position": "B5",
+        "spent": 4,
+        "saved": 2,
+        "destroyed": 10,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 6.2,
+        "lastHouseIgnition": 17,
+        "lastHouseDestruction": 27,
+        "lastSavedCountChange": 17,
+        "cutoff": 45
+      },
+      {
+        "position": "C6",
+        "spent": 4,
+        "saved": 2,
+        "destroyed": 10,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 3.7,
+        "lastHouseIgnition": 15.3,
+        "lastHouseDestruction": 25.3,
+        "lastSavedCountChange": 15.3,
+        "cutoff": 45
+      },
+      {
+        "position": "B6",
+        "spent": 4,
+        "saved": 1,
+        "destroyed": 11,
+        "burning": 0,
+        "success": false,
+        "firstHouseIgnition": 3.7,
+        "lastHouseIgnition": 14.2,
+        "lastHouseDestruction": 24.2,
+        "lastSavedCountChange": 14.2,
+        "cutoff": 45
+      }
+    ]
+  },
+  "doubleStation": {
+    "total": 276,
+    "histogram": {
+      "0": 35,
+      "1": 47,
+      "2": 43,
+      "3": 54,
+      "4": 35,
+      "5": 18,
+      "6": 12,
+      "7": 6,
+      "8": 2,
+      "9": 2,
+      "10": 3,
+      "11": 4,
+      "12": 15
+    },
+    "passing": 26
+  },
+  "westernBreakSubsets": {
+    "total": 64,
+    "histogram": {
+      "0": 63,
+      "12": 1
+    },
+    "cheapestPassing": [
+      {
+        "positions": [
+          "B2",
+          "B3",
+          "B4",
+          "B5",
+          "B6",
+          "B7"
+        ],
+        "spent": 6,
+        "saved": 12,
+        "destroyed": 0,
+        "burning": 0,
+        "success": true,
+        "firstHouseIgnition": null,
+        "lastHouseIgnition": null,
+        "lastHouseDestruction": null,
+        "lastSavedCountChange": 0,
+        "cutoff": 45
+      }
+    ]
+  }
+}
