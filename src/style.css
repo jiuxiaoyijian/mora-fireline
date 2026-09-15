@@ -977,3 +977,198 @@ dialog h2 {
     padding-bottom: 15px;
   }
 }
+/* First complete journey: the same town is visible from title through aftermath. */
+.title-card {
+  position: fixed;
+  margin: auto auto auto 7vw;
+  width: min(470px, 86vw);
+  padding: 40px;
+  border: 1px solid #fff9eb;
+  border-radius: 24px;
+  background: #fbf7ecee;
+  box-shadow: 0 20px 70px #293e2920;
+}
+.title-card::backdrop {
+  background: #a6b69a12;
+  backdrop-filter: none;
+}
+.title-card h2 {
+  font-size: 56px;
+  letter-spacing: 7px;
+  margin: 16px 0;
+}
+.title-card .title-tagline {
+  font-size: 32px;
+  line-height: 1.4;
+  color: #31563d;
+  margin: 20px 0;
+}
+.title-card p {
+  color: #6a7765;
+  line-height: 1.9;
+}
+.title-card > small {
+  display: block;
+  color: #75826f;
+  margin-top: 20px;
+  font-size: 11px;
+}
+.title-card .primary {
+  margin-top: 25px;
+  min-width: 200px;
+}
+.title-facts {
+  display: flex;
+  gap: 14px;
+  margin-top: 22px;
+  font-size: 12px;
+  color: #597149;
+}
+.title-screen {
+  overflow: hidden;
+}
+.title-screen .intro,
+.title-screen .sidebar,
+.title-screen .accessible-map,
+.title-screen footer,
+.title-screen .report,
+.title-screen .header-right {
+  visibility: hidden;
+}
+.title-screen .game-panel {
+  position: fixed;
+  inset: 68px 0 0 0;
+  border: 0;
+  border-radius: 0;
+}
+.title-screen .map-wrap {
+  height: 100%;
+  min-height: 100%;
+  padding-left: 28vw;
+}
+.title-screen #scene {
+  left: 28vw;
+  width: 72vw;
+}
+.title-screen .map-toolbar,
+.title-screen .map-caption,
+.title-screen .hover-tip,
+.title-screen .control-bar,
+.title-screen .insight,
+.title-screen .pause-overlay {
+  display: none;
+}
+.warning-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: #75522a22;
+  pointer-events: none;
+}
+.warning-overlay strong {
+  font-size: 28px;
+  background: #fcf5e9e8;
+  padding: 12px 24px;
+  border-radius: 12px;
+}
+.warning-overlay .eyebrow {
+  padding: 8px;
+  background: #fcf5e9eb;
+}
+.warning-overlay b {
+  font-size: 48px;
+  color: #a6492e;
+}
+.outcome-card {
+  width: min(560px, 92vw);
+  border-radius: 24px;
+  padding: 32px;
+  background: #faf6e9ee;
+  border: 1px solid #fff5d8;
+}
+.outcome-card h2 {
+  font-size: 28px;
+  margin: 14px 0 18px;
+}
+.outcome-card::backdrop {
+  background: #263c2538;
+  backdrop-filter: none;
+}
+.home-lights {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 9px;
+  margin: 22px 0;
+}
+.home-lights span {
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  height: 44px;
+}
+.home-lights .lit {
+  color: #5a5b31;
+  background: #f1d395;
+}
+.home-lights .lost {
+  color: #97968b;
+  background: #e1dfd5;
+}
+#outcome-summary {
+  font-weight: 650;
+  line-height: 1.8;
+}
+#outcome-tip {
+  color: #6d7965;
+  font-size: 13px;
+  line-height: 1.9;
+  margin: 14px 0 24px;
+}
+.outcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.small-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.control-buttons {
+  flex-wrap: wrap;
+}
+#skip-result {
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .title-card {
+    margin: auto;
+    padding: 25px;
+  }
+  .title-card h2 {
+    font-size: 40px;
+  }
+  .title-card .title-tagline {
+    font-size: 26px;
+  }
+  .title-screen #scene {
+    left: 0;
+    width: 100%;
+  }
+  .title-screen .map-wrap {
+    padding-left: 0;
+  }
+  .header-right .version {
+    display: none;
+  }
+  .header-right {
+    gap: 5px;
+  }
+  .header-right button {
+    font-size: 11px;
+  }
+}

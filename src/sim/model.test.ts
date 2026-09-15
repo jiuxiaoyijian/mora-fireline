@@ -15,6 +15,26 @@ import {
   result,
 } from "./model.ts";
 
+test("cooling feedback reports actual allocation, never mere coverage", () => {
+  const layout = defaultLayout();
+  layout[index(1, 2)] = "station";
+  const sim = createSimulation(layout);
+  assert.ok(sim.cells.every((c) => c.cooling === 0));
+  step(sim);
+  assert.ok(sim.cells.some((c) => c.cooling > 0));
+  assert.ok(
+    Math.abs(
+      sim.cells.reduce((sum, c) => sum + c.cooling, 0) - RULES.stationCapacity,
+    ) < 1e-8,
+  );
+  assert.equal(sim.cells[index(1, 2)].cooling, 0);
+  assert.equal(
+    sim.cells[index(2, 2)].cooling,
+    0,
+    "a covered but unheated house must not display active protection",
+  );
+});
+
 test("default scenario contains 12 houses and no defenses; the unprotected settlement is lost", () => {
   const layout = defaultLayout();
   assert.deepEqual(counts(layout), { homes: 12, spent: 0 });

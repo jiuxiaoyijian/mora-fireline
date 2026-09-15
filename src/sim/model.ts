@@ -4,6 +4,7 @@ export type Layout = Kind[];
 export interface Cell {
   kind: Kind;
   heat: number;
+  cooling: number;
   hp: number;
   burning: boolean;
   burned: boolean;
@@ -59,9 +60,9 @@ export const NAMES: Record<Kind, string> = {
   grass: "可燃草地",
   house: "住宅",
   break: "防火带",
-  station: "消防站",
+  station: "蓄水喷淋",
   stone: "石地边界",
-  source: "预定火源",
+  source: "山火入口",
 };
 export const index = (x: number, z: number) => z * RULES.size + x;
 export const coords = (i: number) => ({
@@ -140,6 +141,7 @@ export function createSimulation(layout: Layout): Simulation {
     cells: layout.map((kind) => ({
       kind,
       heat: 0,
+      cooling: 0,
       hp: kind === "house" ? 100 : 0,
       burning: kind === "source",
       burned: false,
@@ -205,6 +207,7 @@ export function step(sim: Simulation): void {
   }
   const tick = sim.tick + 1;
   sim.cells.forEach((cell, i) => {
+    cell.cooling = cooling[i];
     if (cell.burning && cell.kind !== "source") {
       cell.fuel = Math.max(0, cell.fuel - RULES.dt);
       if (cell.kind === "house")

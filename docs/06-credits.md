@@ -26,3 +26,9 @@
 住宅、草木、消防站、火焰、防火带、地板和边界由 Three.js 基础几何生成；UI 图标为项目内 SVG 路径；坐标文字由 Canvas 生成。未使用外部模型、纹理、字体或音频文件。
 
 代码与文档由本次用户与 Codex 协作产生；尚未为项目自身选择开源许可证。
+
+## v0.2 第一批素材补充
+
+木石住宅、蓄水喷淋、林缘均为项目程序模型；`src/audio.ts` 使用 Web Audio 合成提示音，无下载音频。`docs/evidence/v02-title.png` 与 `v02-outcome.png` 是本项目实际浏览器截图。
+
+[美术规范](15-art-direction.md) 链接 Dorfromantik 官方页 / Presskit 与 Kenney City Kit (Suburban) 供对齐参考；未下载、导入或再分发其资源。当前运行资产没有使用图像生成工具。
