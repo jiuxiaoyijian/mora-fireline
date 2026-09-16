@@ -108,6 +108,7 @@ export class GameView {
     this.scene.add(this.hover);
     let drag: { x: number; y: number; button: number; moved: boolean; last: number } | null = null;
     this.host.addEventListener("pointerdown", (event) => {
+      if (!event.isPrimary) { drag = null; return; }
       if (event.button !== 0 && event.button !== 2) return;
       drag = { x: event.clientX, y: event.clientY, button: event.button, moved: false, last: this.pick(event) };
       this.host.setPointerCapture(event.pointerId);
@@ -605,7 +606,7 @@ export class GameView {
     if (!width || !height) return;
     const pitch = THREE.MathUtils.degToRad(this.pitch);
     const yaw = THREE.MathUtils.degToRad(this.azimuth);
-    const distance = 21.5 / this.zoomLevel;
+    const distance = 21.5 / this.zoomLevel * Math.max(1, 0.95 / (width / height));
     this.camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance,
       Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
     this.camera.lookAt(0, 0.1, 0);

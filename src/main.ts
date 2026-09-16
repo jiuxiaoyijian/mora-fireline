@@ -98,10 +98,10 @@ function selectTool(next: Tool): void {
       button.setAttribute("aria-pressed", String(active));
     });
   const notes: Record<Tool, string> = {
-    house: "点击住宅拿起，再点击草地搬迁；Esc 取消。库存中有住宅时可直接安置。",
-    break: "点击草地或住宅铺设防火带。住宅被替换后，需要在其他位置补齐。",
-    station: "保护两步六边形距离内的目标。受热目标越多，每格分到的降温能力越少。",
-    erase: "点击设施退还预算。拆除住宅会退回库存；留下的草地仍然可燃。",
+    house: "住宅 · 点选房屋，再点草地搬迁；空缺住宅可直接安置。",
+    break: "防火带 · 1 点/格，拖动连续铺设；替换住宅后须补齐。",
+    station: "喷淋 · 4 点/座，保护两步内住宅；仅预防起火。",
+    erase: "拆除 · 设施返还预算，住宅退回库存；草地仍可燃。",
   };
   el("tool-note").textContent = notes[next];
   el("scene").dataset.activeTool = next;
@@ -130,6 +130,7 @@ function hoverCell(i: number): void {
     phase === "build" && tool === "station",
     tool,
   );
+  el("hover-tip").hidden = i < 0;
   if (i < 0) {
     el("hover-tip").textContent =
       phase === "build"
@@ -222,6 +223,7 @@ function syncUI(): void {
   el("homes").innerHTML = `${n.homes} <small>/ 12</small>`;
   el("budget").innerHTML = `${RULES.budget - n.spent} <small>点</small>`;
   el("homes").classList.toggle("warning", n.homes !== 12);
+  el("homes-resource").classList.toggle("incomplete", n.homes !== 12);
   const labels: Record<Phase, string> = {
     build: "准备阶段",
     warning: "山火预警",
@@ -230,11 +232,6 @@ function syncUI(): void {
     finished: "已结算",
   };
   el("phase-badge").textContent = labels[phase];
-  el("map-status").textContent =
-    phase === "build"
-      ? "规划家园"
-      : `演练 ${String(experiment).padStart(2, "0")} · ${labels[phase]}`;
-  el("state-dot").classList.toggle("running", phase === "running");
   el("warning-overlay").hidden = phase !== "warning";
   el("cancel-move").hidden = moving < 0 || phase !== "build";
   el<HTMLButtonElement>("undo").disabled =
@@ -244,14 +241,18 @@ function syncUI(): void {
   el("pause-overlay").hidden = phase !== "paused";
   el("review-result").hidden = phase !== "finished";
   el("game-stage").dataset.phase = phase;
+  el("live-homes").hidden = phase === "build" || phase === "warning";
+  el("goal-label").textContent = phase === "finished" && lastResult
+    ? `保住 ${lastResult.saved} / 12 户 · 目标 8 户` : "目标：至少保住 8 户";
+  if (phase === "finished") el("live-homes").textContent = "演练结束 · 可继续改进";
   const primary = el<HTMLButtonElement>("primary");
   primary.innerHTML =
     phase === "build"
       ? "开始演练 <span>→</span>"
       : phase === "running" || phase === "warning"
-        ? "暂停守护 <span>Ⅱ</span>"
+        ? "暂停演练 <span>Ⅱ</span>"
         : phase === "paused"
-          ? "继续守护 <span>→</span>"
+          ? "继续演练 <span>→</span>"
           : "调整布局 <span>→</span>";
   primary.disabled = phase === "build" && !canStart(layout);
   if (phase === "build" && !canStart(layout))
@@ -285,8 +286,7 @@ function updateTime(): void {
   el("progress").style.width = `${(time / RULES.duration) * 100}%`;
   if (sim && (phase === "running" || phase === "paused")) {
     const r = result(sim);
-    el("insight").innerHTML =
-      `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>栋住宅尚未燃烧 · ${r.burning} 栋燃烧中 · ${r.destroyed} 栋已烧毁</strong><p>火焰不能穿过防火带，但会从缺口绕行。打开「喷淋覆盖」观察保护范围。</p></div>`;
+    el("live-homes").textContent = `尚未起火 ${r.saved} 户 · 燃烧 ${r.burning} · 烧毁 ${r.destroyed}`;
   }
 }
 function start(): void {
@@ -349,8 +349,8 @@ function finish(): void {
   }
   el("report").hidden = true;
   el("report-title").textContent = r.success
-    ? "街区守住了。"
-    : "火留下了下一次的线索。";
+    ? "防线通过了演练"
+    : "这次的起火线索";
   el("report-score").innerHTML =
     `<strong>${r.saved}<small> / 12</small></strong><span>${r.success ? "达到保护目标" : `距目标还差 ${RULES.goal - r.saved} 栋`}</span>`;
   el("comparison").textContent = previousResult
@@ -369,14 +369,13 @@ function finish(): void {
         b = coords(event.target);
       const from = `${String.fromCharCode(65 + a.x)}${a.z + 1}`;
       const to = `${String.fromCharCode(65 + b.x)}${b.z + 1}`;
-      return `<li><span>${(event.tick * RULES.dt).toFixed(1)}s</span> ${from} ${NAMES[layout[event.source]]} → ${to} 住宅</li>`;
+      return `<li><button data-event-cell="${event.target}" aria-pressed="false"><span>${(event.tick * RULES.dt).toFixed(1)} 秒 · 定位 ${to}</span>${from} ${NAMES[layout[event.source]]} → ${to} 住宅</button></li>`;
     })
     .join("");
   el("insight").innerHTML =
     `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>${r.success ? "达到目标！" : "演练结束。"}保住 ${r.saved} / 12 栋住宅</strong><p>${previousResult ? `上次 ${previousResult.saved} 栋，本次 ${r.saved} 栋。` : "首次结果已记录。"}打开复盘查看线索，再调整布局。</p></div>`;
-  toast(
-    `演练结束：保住 ${r.saved} / 12 栋住宅。${r.success ? "达到目标！" : "调整布局，再试一次。"}`,
-  );
+  clearTimeout(toastTimer);
+  el("toast").hidden = true;
   audio.play(r.success ? "success" : "finish");
   el("outcome-heading").textContent = r.success
     ? "家园守住了。"
@@ -454,11 +453,11 @@ function showHelp(): void {
 }
 el("reset-layout").addEventListener("click", () => confirmAction(
   "恢复默认街区？", "当前布局将被替换，成绩比较会清除。布局可以撤销。",
-  () => replaceLayout(defaultLayout(), true),
+  () => { replaceLayout(defaultLayout(), true); dialogs.closeAll(); },
 ));
 el("clear-layout").addEventListener("click", () => confirmAction(
   "清空街区重新建造？", "住宅将退回库存，设施预算退还。你可以撤销这次操作。",
-  () => replaceLayout(blankLayout(), false),
+  () => { replaceLayout(blankLayout(), false); dialogs.closeAll(); },
 ));
 el("help-open").addEventListener("click", showHelp);
 el("title-help").addEventListener("click", showHelp);
@@ -475,6 +474,10 @@ document.addEventListener("keydown", (event) => {
     if (dialogs.current) {
       if (dialogs.current === "title-screen") return;
       dialogs.close();
+    } else if (document.querySelector(".map-toolbar details[open]")) {
+      const panel = document.querySelector<HTMLDetailsElement>(".map-toolbar details[open]")!;
+      panel.open = false;
+      panel.querySelector("summary")?.focus();
     } else if (moving >= 0) {
       selectTool(tool);
       toast("已取消搬迁。");
@@ -592,7 +595,7 @@ function enterTown(): void {
 }
 function openPause(): void {
   autoPause();
-  el("pause-close").textContent = phase === "paused" ? "继续守护" : "返回街区";
+  el("pause-close").textContent = phase === "paused" ? "继续演练" : "返回街区";
   el<HTMLButtonElement>("pause-restart").disabled = phase === "build";
   dialogs.open("pause-menu");
 }
@@ -659,8 +662,10 @@ el("game-stage").insertAdjacentHTML("beforeend", `<dialog id="confirm-action" ar
 function confirmAction(heading: string, description: string, action: () => void): void {
   pendingAction = action;
   el("confirm-heading").textContent = heading;
+  el("confirm-ok").textContent = heading.replace(/[？?]$/, "");
   el("confirm-description").textContent = description;
   dialogs.open("confirm-action");
+  el("confirm-cancel").focus();
 }
 el("confirm-cancel").addEventListener("click", () => { pendingAction = null; dialogs.close(); });
 el("confirm-ok").addEventListener("click", () => {
@@ -682,6 +687,29 @@ el("outcome-edit").addEventListener("click", backToBuild);
 el("outcome-details").addEventListener("click", () => {
   dialogs.closeAll();
   dialogs.open("report");
+  const firstEvent = el("event-list").querySelector<HTMLButtonElement>("[data-event-cell]");
+  if (firstEvent) highlightEvent(firstEvent);
+});
+function highlightEvent(button: HTMLButtonElement): void {
+  el("event-list").querySelectorAll("button").forEach(node => node.setAttribute("aria-pressed", String(node === button)));
+  view.preview(Number(button.dataset.eventCell), true, false);
+}
+el("event-list").addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-event-cell]");
+  if (button) highlightEvent(button);
+});
+el("mission-open").addEventListener("click", () => { autoPause(); dialogs.open("mission-dialog"); });
+el("mission-close").addEventListener("click", () => dialogs.close());
+const panels = [...document.querySelectorAll<HTMLDetailsElement>(".map-toolbar details")];
+for (const panel of panels) panel.addEventListener("toggle", () => {
+  if (panel.open) panels.filter(other => other !== panel).forEach(other => other.open = false);
+});
+document.addEventListener("pointerdown", event => {
+  if (!(event.target as HTMLElement).closest(".map-toolbar")) panels.forEach(panel => panel.open = false);
+});
+el("game-stage").addEventListener("dialog-change", () => {
+  panels.forEach(panel => panel.open = false);
+  if (dialogs.current !== "report") view.preview(-1, true, false);
 });
 selectTool(tool);
 save();

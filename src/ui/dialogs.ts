@@ -1,4 +1,4 @@
-/** In-stage dialogs keep the same scale as the game, with modal focus semantics. */
+/** Responsive in-stage dialogs with modal focus and inert semantics. */
 export class GameDialogs {
   private stack: { node: HTMLElement; returnTo: HTMLElement | null }[] = [];
   constructor(private stage: HTMLElement) {
@@ -41,8 +41,11 @@ export class GameDialogs {
     else entry.node.hidden = true;
     entry.node.removeAttribute("aria-modal");
     this.sync();
-    if (entry.returnTo?.isConnected && !entry.returnTo.closest("[inert]"))
-      entry.returnTo.focus({ preventScroll: true });
+    if (entry.returnTo?.isConnected && !entry.returnTo.closest("[inert]")) {
+      const collapsed = entry.returnTo.closest("details:not([open])");
+      const target = collapsed?.querySelector<HTMLElement>("summary") ?? entry.returnTo;
+      if (target.getClientRects().length) target.focus({ preventScroll: true });
+    }
   }
   closeAll(): void { while (this.stack.length) this.close(); }
   private focusable(node: HTMLElement): HTMLElement[] {
@@ -51,6 +54,8 @@ export class GameDialogs {
   }
   private sync(): void {
     const top = this.stack.at(-1)?.node;
+    this.stage.classList.toggle("report-open", top?.id === "report");
+    this.stage.dispatchEvent(new Event("dialog-change"));
     for (const child of this.stage.children) {
       if (!(child instanceof HTMLElement)) continue;
       child.inert = !!top && child !== top && child.id !== "modal-shade";
