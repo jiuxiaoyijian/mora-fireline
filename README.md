@@ -12,6 +12,8 @@
 
 新增 [建造与灾害模拟竞品研究](docs/16-建造与灾害模拟竞品研究.md)：七款同类与相邻游戏的官方资料、可借鉴机制及对应工作项；研究建议尚未改变当前规则。
 
+协作采用主控开发、测试回归、美术资源、UI／UE 四个角色，职责与首轮任务见 [多 Agent 协作规范](docs/17-多Agent协作分工与交接规范.md)，实际进度仍统一维护在工作排期表。
+
 仓库：[jiuxiaoyijian/mora-fireline](https://github.com/jiuxiaoyijian/mora-fireline)，当前为私有开发仓库。
 
 ## 给评审的阅读入口
