@@ -1,0 +1,31 @@
+{
+  "viewport": "1280x720",
+  "dpr": 1,
+  "phases": {
+    "title-screen": {
+      "samples": 5,
+      "fps": 24.4,
+      "frameP95": 156.4,
+      "cpuP95": 129.6,
+      "slowFrames": 1,
+      "calls": 380,
+      "triangles": 12149,
+      "geometries": 350
+    },
+    "build": {
+      "samples": 600,
+      "fps": 31.9,
+      "frameP95": 31.7,
+      "cpuP95": 10.3,
+      "slowFrames": 3,
+      "calls": 350,
+      "triangles": 11340,
+      "geometries": 350
+    }
+  },
+  "layoutUpdates": 1,
+  "layoutMaxMs": 17.3,
+  "lastLayoutMs": [
+    17.3
+  ]
+}

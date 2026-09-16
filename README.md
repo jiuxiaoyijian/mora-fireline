@@ -116,3 +116,5 @@ npm run preview
 新增前景拍岸浪花及雪山流向大海的河流，水景不影响消防规则。31 项自动检查通过。GitHub Actions 在 main 更新后运行完整检查并部署 Pages。
 
 游玩地址：https://jiuxiaoyijian.github.io/mora-fireline/
+
+水景融合修订：河海统一着色，加入沙岸/湿沙过渡、碎浪及渐宽河口，取代独立蓝色色带和规则白线。参考与验证见开发记录。

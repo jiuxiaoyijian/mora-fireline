@@ -64,13 +64,13 @@ test("performance report keeps long frames and uses correct nearest-rank p95", (
   assert.equal(report.samples, 100);
 });
 
-test("water animation retains two meshes and fixed geometry across 600 frames", () => {
+test("water animation retains one unified mesh and fixed geometry across 600 frames", () => {
   const scene = new THREE.Scene();
   const update = addWaterscape(scene);
   const meshes = scene.children as THREE.Mesh[];
   const geometry = meshes.map(mesh => mesh.geometry);
   for (let frame = 0; frame < 600; frame++) update(frame / 60);
-  assert.equal(scene.children.length, 2);
+  assert.equal(scene.children.length, 1);
   meshes.forEach((mesh, i) => assert.equal(mesh.geometry, geometry[i]));
   assert.ok(8 > shoreline(riverCenter(8)), "river mouth must overlap the sea");
   for (let x = -4.5; x <= 4.5; x += .5) assert.ok(shoreline(x) > 4, "sea must stay outside playable hexes");
