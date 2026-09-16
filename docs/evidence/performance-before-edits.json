@@ -1,0 +1,68 @@
+{
+  "viewport": "1280x720",
+  "dpr": 1,
+  "phases": {
+    "title-screen": {
+      "samples": 600,
+      "fps": 31.8,
+      "frameP95": 31.6,
+      "cpuP95": 8.3,
+      "slowFrames": 1,
+      "calls": 810,
+      "triangles": 15008,
+      "geometries": 531
+    },
+    "build": {
+      "samples": 600,
+      "fps": 32,
+      "frameP95": 31.7,
+      "cpuP95": 8.8,
+      "slowFrames": 0,
+      "calls": 810,
+      "triangles": 15008,
+      "geometries": 531
+    },
+    "warning": {
+      "samples": 75,
+      "fps": 31.6,
+      "frameP95": 31.7,
+      "cpuP95": 9.2,
+      "slowFrames": 1,
+      "calls": 810,
+      "triangles": 15008,
+      "geometries": 531
+    },
+    "running": {
+      "samples": 600,
+      "fps": 32,
+      "frameP95": 31.6,
+      "cpuP95": 8.9,
+      "slowFrames": 0,
+      "calls": 859,
+      "triangles": 15501,
+      "geometries": 630
+    },
+    "outcome": {
+      "samples": 600,
+      "fps": 32,
+      "frameP95": 31.7,
+      "cpuP95": 8.5,
+      "slowFrames": 0,
+      "calls": 810,
+      "triangles": 15008,
+      "geometries": 630
+    },
+    "grid-dialog": {
+      "samples": 390,
+      "fps": 31.9,
+      "frameP95": 31.7,
+      "cpuP95": 9.7,
+      "slowFrames": 1,
+      "calls": 811,
+      "triangles": 15039,
+      "geometries": 542
+    }
+  },
+  "layoutUpdates": 8,
+  "layoutMaxMs": 30.8
+}

@@ -1,3 +1,4 @@
+import { hexDistance, hexNeighbors } from "./hex.ts";
 export type Kind = "grass" | "house" | "break" | "station" | "stone" | "source";
 export type Tool = "house" | "break" | "station" | "erase";
 export type Layout = Kind[];
@@ -61,7 +62,7 @@ export const NAMES: Record<Kind, string> = {
   house: "住宅",
   break: "防火带",
   station: "蓄水喷淋",
-  stone: "石地边界",
+  stone: "天然岩地（不传火）",
   source: "山火入口",
 };
 export const index = (x: number, z: number) => z * RULES.size + x;
@@ -69,27 +70,23 @@ export const coords = (i: number) => ({
   x: i % RULES.size,
   z: Math.floor(i / RULES.size),
 });
-export const distance = (a: number, b: number) => {
-  const p = coords(a),
-    q = coords(b);
-  return Math.abs(p.x - q.x) + Math.abs(p.z - q.z);
-};
+export const distance = hexDistance;
 export function buildable(i: number): boolean {
   if (!Number.isInteger(i) || i < 0 || i >= 64) return false;
   const { x, z } = coords(i);
-  return x > 0 && x < 7 && z > 0 && z < 7;
+  return x > 0 && x < 7 && z > 0 && z < 7 && z !== 3;
 }
 export function blankLayout(): Layout {
   return Array.from({ length: 64 }, (_, i) => {
     const { x, z } = coords(i);
     if (i === index(0, 2) || i === index(0, 5)) return "source";
-    return buildable(i) || (x === 0 && z > 0 && z < 7) ? "grass" : "stone";
+    return buildable(i) || (x === 0 && z > 0 && z < 7 && z !== 3) ? "grass" : "stone";
   });
 }
 export function defaultLayout(): Layout {
   const layout = blankLayout();
-  for (let z = 2; z <= 4; z++)
-    for (let x = 2; x <= 5; x++) layout[index(x, z)] = "house";
+  for (const z of [1, 2, 4, 5])
+    for (let x = 3; x <= 5; x++) layout[index(x, z)] = "house";
   return layout;
 }
 export function counts(layout: Layout) {
@@ -121,7 +118,7 @@ export function editLayout(
   tool: Tool,
 ): { layout: Layout; error?: string } {
   if (!buildable(i))
-    return { layout, error: "边界和火源不可建造。请选择街区内的格子。" };
+    return { layout, error: "天然岩地、边界和火源不可建造。请选择草地。" };
   const kind = tool === "erase" ? "grass" : tool;
   if (layout[i] === kind) return { layout };
   const next = layout.slice();
@@ -160,15 +157,7 @@ export function createSimulation(layout: Layout): Simulation {
 function flammable(cell: Cell) {
   return (cell.kind === "grass" || cell.kind === "house") && !cell.burned;
 }
-export function neighbors(i: number): number[] {
-  const { x, z } = coords(i);
-  return [
-    x > 0 ? i - 1 : -1,
-    x < 7 ? i + 1 : -1,
-    z > 0 ? i - 8 : -1,
-    z < 7 ? i + 8 : -1,
-  ].filter((j) => j >= 0);
-}
+export const neighbors = hexNeighbors;
 export function step(sim: Simulation): void {
   if (sim.done) return;
   const incoming = new Float64Array(64);

@@ -1,5 +1,6 @@
 import "./style.css";
 import { GameAudio } from "./audio.ts";
+import { performanceRecorder } from "./performance.ts";
 import { GameView } from "./view.ts";
 import {
   RULES,
@@ -10,13 +11,13 @@ import {
   canStart,
   editLayout,
   createSimulation,
-  step,
   result,
   validateLayout,
   coords,
   buildable,
 } from "./sim/model.ts";
 import type { Layout, Tool, Simulation, Result } from "./sim/model.ts";
+import { advancePlayback, completeSimulation } from "./sim/playback.ts";
 
 import { gameTemplate, svg } from "./ui/template.ts";
 import { fitStage } from "./ui/stage.ts";
@@ -41,16 +42,20 @@ let sim: Simulation | null = null;
 let tool: Tool = "break";
 let speed = 1;
 let accumulator = 0;
+let playbackStoppedAt: number | null = null;
 let previousResult: Result | null = null;
 let lastResult: Result | null = null;
 let experiment = 0;
 let coverage = false,
   routes = false;
 let toastTimer: ReturnType<typeof setTimeout>;
-const storageKey = "fireline-layout-v1";
+// Hex topology and fixed terrain differ: preserve the old save under its old key.
+const storageKey = "fireline-layout-hex-v2";
+let legacyLayoutAvailable = false;
 let storageAvailable = true;
 try {
   const stored = localStorage.getItem(storageKey);
+  legacyLayoutAvailable = !stored && !!localStorage.getItem("fireline-layout-v1");
   if (stored) {
     const parsed: unknown = JSON.parse(stored);
     if (validateLayout(parsed)) {
@@ -95,7 +100,7 @@ function selectTool(next: Tool): void {
   const notes: Record<Tool, string> = {
     house: "点击住宅拿起，再点击草地搬迁；Esc 取消。库存中有住宅时可直接安置。",
     break: "点击草地或住宅铺设防火带。住宅被替换后，需要在其他位置补齐。",
-    station: "保护两格步行距离内的目标。受热目标越多，每格分到的降温能力越少。",
+    station: "保护两步六边形距离内的目标。受热目标越多，每格分到的降温能力越少。",
     erase: "点击设施退还预算。拆除住宅会退回库存；留下的草地仍然可燃。",
   };
   el("tool-note").textContent = notes[next];
@@ -123,12 +128,13 @@ function hoverCell(i: number): void {
     phase === "build" ? i : -1,
     valid,
     phase === "build" && tool === "station",
+    tool,
   );
   if (i < 0) {
     el("hover-tip").textContent =
       phase === "build"
         ? "选择工具后，点击格子进行建造"
-        : "观察火势，实验结束后可修改布局";
+        : "观察火势，演练结束后可修改布局";
     return;
   }
   const { x, z } = coords(i);
@@ -147,7 +153,7 @@ function selectCell(i: number): void {
   hoverCell(i);
   if (dialogs.current && dialogs.current !== "grid-dialog") return;
   if (phase !== "build") {
-    toast("实验期间不能改建。结算后选择「调整布局」。");
+    toast("演练期间不能改建。结算后选择「调整布局」。");
     return;
   }
   if (tool === "house" && layout[i] === "house") {
@@ -196,7 +202,7 @@ function grid(): void {
       const { x, z } = coords(i);
       const state = sim?.cells[i];
       const label = `${String.fromCharCode(65 + x)}${z + 1} ${NAMES[kind]}${state?.burned ? " 已烧毁" : state?.burning ? " 燃烧中" : ""}`;
-      return `<button data-cell="${i}" class="grid-${kind}" ${!buildable(i) || phase !== "build" ? "disabled" : ""} aria-label="${label}"><small>${String.fromCharCode(65 + x)}${z + 1}</small>${kind === "house" ? "宅" : kind === "station" ? "喷" : kind === "break" ? "隔" : kind === "source" ? "火" : kind === "stone" ? "石" : "草"}</button>`;
+      return `<button data-cell="${i}" style="grid-column:${x * 2 + 1 + z % 2} / span 2;grid-row:${z + 1}" class="grid-${kind}" ${!buildable(i) || phase !== "build" ? "disabled" : ""} aria-label="${label}"><small>${String.fromCharCode(65 + x)}${z + 1}</small>${kind === "house" ? "宅" : kind === "station" ? "喷" : kind === "break" ? "隔" : kind === "source" ? "火" : kind === "stone" ? "石" : "草"}</button>`;
     })
     .join("");
   if (focusedCell !== undefined)
@@ -227,7 +233,7 @@ function syncUI(): void {
   el("map-status").textContent =
     phase === "build"
       ? "规划家园"
-      : `实验 ${String(experiment).padStart(2, "0")} · ${labels[phase]}`;
+      : `演练 ${String(experiment).padStart(2, "0")} · ${labels[phase]}`;
   el("state-dot").classList.toggle("running", phase === "running");
   el("warning-overlay").hidden = phase !== "warning";
   el("cancel-move").hidden = moving < 0 || phase !== "build";
@@ -241,7 +247,7 @@ function syncUI(): void {
   const primary = el<HTMLButtonElement>("primary");
   primary.innerHTML =
     phase === "build"
-      ? "准备好了 <span>→</span>"
+      ? "开始演练 <span>→</span>"
       : phase === "running" || phase === "warning"
         ? "暂停守护 <span>Ⅱ</span>"
         : phase === "paused"
@@ -264,8 +270,12 @@ function syncUI(): void {
     phase === "build"
       ? "等待开始"
       : phase === "finished"
-        ? "实验结束"
+        ? "演练结束"
         : "火灾进程";
+  el("mission-status").textContent = phase === "build"
+    ? (lastResult ? `上次演练保住 ${lastResult.saved} 户。调整后再验证。` : "先规划防线，再用演练验证。")
+    : phase === "finished" ? (lastResult?.success ? "本次演练已达到最低承诺。" : "根据损失线索修订方案。")
+    : "正在验证防线；结果以演练结束时为准。";
   grid();
   updateTime();
 }
@@ -288,6 +298,7 @@ function start(): void {
   moving = -1;
   sim = null;
   phase = "warning";
+  playbackStoppedAt = null;
   warningRemaining = 2.4;
   el("warning-count").textContent = "3";
   audio.play("warning");
@@ -329,6 +340,13 @@ function finish(): void {
   lastResult = result(sim);
   const r = lastResult;
   const diff = previousResult ? r.saved - previousResult.saved : 0;
+  const completionNote = playbackStoppedAt === null
+    ? ""
+    : `${(playbackStoppedAt * RULES.dt).toFixed(1)} 秒时住宅已全部烧毁，自动跳过剩余演出；结果与复盘仍按完整 45 秒计算。`;
+  for (const id of ["outcome-completion", "report-completion"]) {
+    el(id).textContent = completionNote;
+    el(id).hidden = !completionNote;
+  }
   el("report").hidden = true;
   el("report-title").textContent = r.success
     ? "街区守住了。"
@@ -337,7 +355,7 @@ function finish(): void {
     `<strong>${r.saved}<small> / 12</small></strong><span>${r.success ? "达到保护目标" : `距目标还差 ${RULES.goal - r.saved} 栋`}</span>`;
   el("comparison").textContent = previousResult
     ? `同一场向东蔓延的山火：上次 ${previousResult.saved} 栋 → 本次 ${r.saved} 栋。${diff > 0 ? `多保住了 ${diff} 栋。` : diff < 0 ? `少保住了 ${-diff} 栋，试着检查新出现的缺口。` : "结果相同，可以验证另一种布局。"}`
-    : "这是本次会话的第一次实验。调整后再试，比较布局的效果。";
+    : "这是本次会话的第一次演练。调整后再试，比较布局的效果。";
   const ignitions = sim.events.filter(
     (event) => event.type === "ignite" && layout[event.target] === "house",
   );
@@ -355,9 +373,9 @@ function finish(): void {
     })
     .join("");
   el("insight").innerHTML =
-    `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>${r.success ? "达到目标！" : "实验结束。"}保住 ${r.saved} / 12 栋住宅</strong><p>${previousResult ? `上次 ${previousResult.saved} 栋，本次 ${r.saved} 栋。` : "首次结果已记录。"}打开复盘查看线索，再调整布局。</p></div>`;
+    `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>${r.success ? "达到目标！" : "演练结束。"}保住 ${r.saved} / 12 栋住宅</strong><p>${previousResult ? `上次 ${previousResult.saved} 栋，本次 ${r.saved} 栋。` : "首次结果已记录。"}打开复盘查看线索，再调整布局。</p></div>`;
   toast(
-    `实验结束：保住 ${r.saved} / 12 栋住宅。${r.success ? "达到目标！" : "调整布局，再试一次。"}`,
+    `演练结束：保住 ${r.saved} / 12 栋住宅。${r.success ? "达到目标！" : "调整布局，再试一次。"}`,
   );
   audio.play(r.success ? "success" : "finish");
   el("outcome-heading").textContent = r.success
@@ -370,6 +388,10 @@ function finish(): void {
     (_, i) =>
       `<span class="${i < r.saved ? "lit" : "lost"}">${svg("house")}</span>`,
   ).join("");
+  el("outcome-mission").textContent = r.saved === RULES.homes
+    ? "完整守护达成：12 户家园全部保住。你的防线已通过本次演练。"
+    : r.success ? "最低承诺达成。还可以补强防线，让更多住户有家可归。"
+    : `这份方案还需要完善：距离 8 户承诺还差 ${RULES.goal - r.saved} 户。保留布局，再修一处。`;
   el("outcome-summary").textContent =
     `保住 ${r.saved} / 12 栋 · ${r.success ? "完成保护目标" : `距离目标还差 ${RULES.goal - r.saved} 栋`} · 使用 ${counts(layout).spent} / 12 点预算${previousResult ? ` · 比上次${diff >= 0 ? "多" : "少"} ${Math.abs(diff)} 栋` : ""}`;
   const first = ignitions[0];
@@ -486,6 +508,8 @@ document.addEventListener("visibilitychange", () => {
 let lastTime = performance.now(),
   uiElapsed = 0;
 function frame(now: number): void {
+  const frameStart = performance.now();
+  const interval = now - lastTime;
   const elapsed = Math.min((now - lastTime) / 1000, 0.25);
   lastTime = now;
   if (phase === "warning") {
@@ -503,7 +527,7 @@ function frame(now: number): void {
   if (phase === "running" && sim) {
     accumulator += elapsed * speed;
     while (accumulator >= RULES.dt && !sim.done) {
-      step(sim);
+      playbackStoppedAt = advancePlayback(sim) ?? playbackStoppedAt;
       accumulator -= RULES.dt;
     }
     uiElapsed += elapsed;
@@ -514,6 +538,7 @@ function frame(now: number): void {
     if (sim.done) finish();
   }
   view.update(sim, elapsed);
+  performanceRecorder.record(dialogs.current ?? phase, { interval, cpu: performance.now() - frameStart, ...view.metrics() });
   requestAnimationFrame(frame);
 }
 function undo(): void {
@@ -540,7 +565,7 @@ el("scene").addEventListener("contextmenu", (event) => {
 });
 el("skip-result").addEventListener("click", () => {
   if (!sim || !(phase === "running" || phase === "paused")) return;
-  while (!sim.done) step(sim);
+  completeSimulation(sim);
   finish();
 });
 function openTitle(): void {
@@ -548,16 +573,20 @@ function openTitle(): void {
   dialogs.closeAll();
   document.body.classList.add("title-screen");
   const activeRun = phase === "paused";
-  el("enter-town").textContent = activeRun ? "继续本次守护 →" : phase === "finished" ? "查看本次成果 →" : storedLayout ? "继续建设 →" : "开始游戏 →";
+  el("enter-town").textContent = activeRun ? "继续本次守护 →" : phase === "finished" ? "查看本次成果 →" : storedLayout ? "继续我的规划 →" : "接受委托 →";
   el("continue-note").textContent = activeRun
     ? "火情已暂停 · 布局与进度保留在本次会话"
     : phase === "finished" ? "本次结果已保留 · 可以继续修改防线"
-    : storedLayout ? "继续此浏览器保存的布局" : "自由建设 · 45 秒火情 · 同一场山火可以重试";
+    : storedLayout ? "继续此浏览器保存的布局" : "先规划，再验证 · 同一场山火可反复演练";
   dialogs.open("title-screen");
 }
 function enterTown(): void {
   dialogs.closeAll();
   document.body.classList.remove("title-screen");
+  if (legacyLayoutAvailable) {
+    toast("已进入六边形新地图。旧方格布局仍保留，未覆盖；本地图独立保存。");
+    legacyLayoutAvailable = false;
+  }
   if (phase === "finished") dialogs.open("outcome");
   else el("primary").focus({ preventScroll: true });
 }
@@ -574,6 +603,12 @@ el("pause-close").addEventListener("click", () => {
   if (phase === "paused") primaryAction();
 });
 el("pause-title").addEventListener("click", openTitle);
+let performanceQuality = false;
+el("quality").addEventListener("click", () => {
+  performanceQuality = !performanceQuality;
+  view.setPerformanceQuality(performanceQuality);
+  el("quality").textContent = performanceQuality ? "画质：流畅（关闭阴影）" : "画质：标准";
+});
 el("pause-restart").addEventListener("click", () => confirmAction(
   "结束本次火情，重新规划？", "保留所有建筑布局，当前火情进度不会计入成绩。", backToBuild,
 ));
@@ -599,6 +634,13 @@ el("title-new").addEventListener("click", () => confirmAction(
   },
 ));
 el("grid-open").addEventListener("click", () => { autoPause(); dialogs.open("grid-dialog"); });
+el("grid-guides").addEventListener("click", () => {
+  const show = el("grid-guides").getAttribute("aria-pressed") !== "true";
+  view.showGuides(show);
+  el("grid-guides").setAttribute("aria-pressed", String(show));
+});
+for (const action of ["in", "out", "up", "down", "reset"] as const)
+  el(`camera-${action}`).addEventListener("click", () => view.adjustCamera(action));
 el("grid-close").addEventListener("click", () => dialogs.close());
 el("report-close").addEventListener("click", () => dialogs.close());
 el("review-result").addEventListener("click", () => dialogs.open("outcome"));
@@ -641,6 +683,7 @@ el("outcome-details").addEventListener("click", () => {
   dialogs.closeAll();
   dialogs.open("report");
 });
+selectTool(tool);
 save();
 syncUI();
 openTitle();

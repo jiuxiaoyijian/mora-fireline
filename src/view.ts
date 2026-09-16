@@ -1,11 +1,21 @@
 import * as THREE from "three";
-import { RULES, coords, buildable, distance } from "./sim/model.ts";
-import type { Layout, Simulation } from "./sim/model.ts";
+import { RULES, buildable, distance } from "./sim/model.ts";
+import { HEX_RADIUS, hexPosition } from "./sim/hex.ts";
+import { addLandscape } from "./landscape.ts";
+import { addWaterscape } from "./waterscape.ts";
+import { performanceRecorder } from "./performance.ts";
+import type { Layout, Simulation, Tool } from "./sim/model.ts";
 
 type SelectHandler = (index: number) => void;
 export class GameView {
   private scene = new THREE.Scene();
-  private camera = new THREE.OrthographicCamera(-6, 6, 6, -6, 0.1, 100);
+  private camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 160);
+  private zoomLevel = 1;
+  private pitch = 50;
+  private azimuth = 25;
+  private guides = new THREE.Group();
+  private hasGuides = false;
+  private ghost = new THREE.Group();
   private renderer: THREE.WebGLRenderer;
   private groups: THREE.Group[] = [];
   private tiles: THREE.Mesh[] = [];
@@ -13,6 +23,7 @@ export class GameView {
   private flames: THREE.Group[] = [];
   private halos: THREE.Mesh[] = [];
   private water: THREE.Mesh[] = [];
+  private spray: (THREE.Group | null)[] = [];
   private previewCell = -1;
   private board = new THREE.Group();
   private routes = new THREE.Group();
@@ -21,33 +32,42 @@ export class GameView {
   private layout: Layout = [];
   private hovered = -1;
   private clock = 0;
+  private animateWater: (seconds: number) => void = () => {};
   private hasCoverage = false;
   private hasRoutes = false;
   private eventCount = -1;
+  private lastSimulation: Simulation | null = null;
+  private lastTick = -1;
+  private heatColor = new THREE.Color("#e77a38");
+  private pickables: THREE.Object3D[] = [];
+  private performanceQuality = false;
   private reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
     .matches;
   private resizeObserver: ResizeObserver;
+  private host: HTMLElement;
 
   constructor(
-    private host: HTMLElement,
+    host: HTMLElement,
     onSelect: SelectHandler,
     onHover: SelectHandler,
   ) {
-    this.scene.background = new THREE.Color("#e4e9dc");
+    this.host = host;
+    this.scene.background = new THREE.Color("#cfdfdf");
+    this.scene.fog = new THREE.Fog("#cfdfdf", 32, 70);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
+    this.renderer.toneMappingExposure = 0.95;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.setAttribute(
       "aria-label",
       "火线街区三维地图；可打开键盘建造网格进行操作",
     );
     this.host.appendChild(this.renderer.domElement);
-    this.camera.position.set(10, 12, 14);
-    this.camera.lookAt(0, 0, 0);
     this.scene.add(new THREE.HemisphereLight("#fff7e8", "#5e8275", 2.6));
     const sun = new THREE.DirectionalLight("#fff4dc", 3.3);
     sun.position.set(-5, 12, 7);
@@ -61,41 +81,22 @@ export class GameView {
     });
     sun.shadow.bias = -0.001;
     this.scene.add(sun);
-    const ground = this.box(200, 0.1, 200, "#e4e9dc");
-    ground.position.y = -0.66;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
-    const plinth = this.box(8.5, 0.48, 8.5, "#577c6a");
-    plinth.position.y = -0.31;
-    plinth.receiveShadow = true;
-    this.scene.add(plinth, this.board, this.routes);
-    // Decorative forest sits outside the rule grid; it is never a fire obstacle.
-    for (let i = 0; i < 7; i++) {
-      const tree = new THREE.Group();
-      const trunk = this.box(0.12, 0.55, 0.12, "#826347");
-      trunk.position.y = -0.05;
-      tree.add(trunk);
-      for (let tier = 0; tier < 2; tier++) {
-        const crown = new THREE.Mesh(
-          new THREE.ConeGeometry(0.34 - tier * 0.08, 0.75, 7),
-          new THREE.MeshStandardMaterial({
-            color: i % 2 ? "#69816a" : "#829373",
-            roughness: 1,
-          }),
-        );
-        crown.position.y = 0.35 + tier * 0.3;
-        crown.castShadow = true;
-        tree.add(crown);
-      }
-      tree.position.set(-4.65 - (i % 2) * 0.25, 0, i - 3);
-      this.scene.add(tree);
-    }
-    for (let i = 0; i < 8; i++) {
-      this.label(String.fromCharCode(65 + i), i - 3.5, 4.6);
-      this.label(String(i + 1), 4.6, i - 3.5);
+    addLandscape(this.scene);
+    this.animateWater = addWaterscape(this.scene);
+    this.scene.add(this.board, this.routes, this.guides, this.ghost);
+    this.guides.visible = false;
+    for (let i = 0; i < 64; i++) {
+      const p = hexPosition(i);
+      const points = Array.from({ length: 7 }, (_, n) => {
+        const angle = Math.PI / 6 + n * Math.PI / 3;
+        return new THREE.Vector3(p.x + Math.cos(angle) * HEX_RADIUS, 0.075, p.z + Math.sin(angle) * HEX_RADIUS);
+      });
+      this.guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({ color: "#526c50", transparent: true, opacity: 0.45 })));
+      this.label(`${String.fromCharCode(65 + i % 8)}${Math.floor(i / 8) + 1}`, p.x, p.z + 0.37);
     }
     this.hover = new THREE.Mesh(
-      new THREE.BoxGeometry(0.97, 0.025, 0.97),
+      new THREE.CylinderGeometry(HEX_RADIUS, HEX_RADIUS, 0.025, 6),
       new THREE.MeshBasicMaterial({
         color: "#f0aa49",
         transparent: true,
@@ -105,7 +106,31 @@ export class GameView {
     );
     this.hover.visible = false;
     this.scene.add(this.hover);
+    let drag: { x: number; y: number; button: number; moved: boolean; last: number } | null = null;
+    this.host.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 && event.button !== 2) return;
+      drag = { x: event.clientX, y: event.clientY, button: event.button, moved: false, last: this.pick(event) };
+      this.host.setPointerCapture(event.pointerId);
+    });
     this.host.addEventListener("pointermove", (event) => {
+      if (drag) {
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+        if (Math.hypot(dx, dy) > 5) drag.moved = true;
+        if (drag.button === 2 && drag.moved) {
+          this.azimuth -= dx * 0.25;
+          this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.2, 30, 70);
+          drag.x = event.clientX; drag.y = event.clientY;
+          this.resize();
+          return;
+        }
+        if (drag.button === 0 && drag.moved && this.host.dataset.activeTool === "break") {
+          const next = this.pick(event);
+          if (next >= 0 && next !== drag.last) {
+            if (drag.last >= 0) onSelect(drag.last);
+            onSelect(next); drag.last = next;
+          }
+        }
+      }
       const i = this.pick(event);
       if (i !== this.hovered) {
         this.hovered = i;
@@ -113,19 +138,29 @@ export class GameView {
       }
 
       if (i >= 0) {
-        const { x, z } = coords(i);
-        this.hover.position.set(x - 3.5, 0.085, z - 3.5);
+        const { x, z } = hexPosition(i);
+        this.hover.position.set(x, 0.085, z);
       }
     });
     this.host.addEventListener("pointerleave", () => {
       this.hover.visible = false;
+      this.ghost.visible = false;
       this.hovered = -1;
       onHover(-1);
     });
-    this.host.addEventListener("click", (event) => {
-      const i = this.pick(event);
-      if (i >= 0) onSelect(i);
+    this.host.addEventListener("pointerup", (event) => {
+      if (drag?.button === 0 && !drag.moved) {
+        const i = this.pick(event);
+        if (i >= 0) onSelect(i);
+      }
+      drag = null;
+      if (this.host.hasPointerCapture(event.pointerId)) this.host.releasePointerCapture(event.pointerId);
     });
+    this.host.addEventListener("pointercancel", () => { drag = null; });
+    this.host.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      this.adjustCamera(event.deltaY < 0 ? "in" : "out");
+    }, { passive: false });
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     window.addEventListener("stage-resize", () => this.resize());
@@ -146,8 +181,8 @@ export class GameView {
     canvas.width = 96;
     canvas.height = 96;
     const context = canvas.getContext("2d")!;
-    context.fillStyle = "#657d60";
-    context.font = "500 48px sans-serif";
+    context.fillStyle = "#253b2d";
+    context.font = "700 42px sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(text, 48, 48);
@@ -156,11 +191,13 @@ export class GameView {
         map: new THREE.CanvasTexture(canvas),
         transparent: true,
         depthWrite: false,
+        depthTest: false,
       }),
     );
-    sprite.position.set(x, 0.05, z);
+    sprite.position.set(x, 0.16, z);
+    sprite.renderOrder = 2;
     sprite.scale.set(0.38, 0.38, 0.38);
-    this.scene.add(sprite);
+    this.guides.add(sprite);
   }
   private disposeObject(object: THREE.Object3D): void {
     object.traverse((child) => {
@@ -174,36 +211,40 @@ export class GameView {
     });
   }
   setLayout(layout: Layout): void {
-    this.disposeObject(this.board);
-    this.board.clear();
+    const started = performance.now();
+    const oldLayout = this.layout;
+    const reset = this.lastSimulation !== null;
+    this.lastSimulation = null;
+    this.lastTick = -1;
     this.layout = layout.slice();
-    this.groups = [];
-    this.tiles = [];
-    this.bodies = [];
-    this.flames = [];
-    this.halos = [];
-    this.water = [];
     this.previewCell = -1;
     this.hover.visible = false;
+    this.ghost.visible = false;
     this.clearRoutes();
     layout.forEach((kind, i) => {
-      const { x, z } = coords(i);
+      if (!reset && oldLayout[i] === kind) return;
+      if (this.groups[i]) {
+        this.disposeObject(this.groups[i]);
+        this.board.remove(this.groups[i]);
+      }
+      const { x, z } = hexPosition(i);
       const group = new THREE.Group();
-      group.position.set(x - 3.5, 0, z - 3.5);
+      group.position.set(x, 0, z);
       group.userData.index = i;
       const tileColor =
         kind === "stone"
-          ? "#b4beb2"
+          ? "#aaa894"
           : kind === "break"
             ? "#dbccb4"
-            : (x + z) % 2
-              ? "#a4b888"
-              : "#adbf93";
-      const tile = this.box(0.965, 0.09, 0.965, tileColor);
+            : "#9eae78";
+      const tile = new THREE.Mesh(new THREE.CylinderGeometry(HEX_RADIUS + 0.002, HEX_RADIUS + 0.002, 0.06, 6),
+        new THREE.MeshStandardMaterial({ color: tileColor, roughness: 1 }));
+      tile.receiveShadow = true;
       tile.position.y = 0;
       group.add(tile);
-      this.tiles.push(tile);
+      this.tiles[i] = tile;
       let body: THREE.Mesh | null = null;
+      let spray: THREE.Group | null = null;
       if (kind === "house") {
         body = this.box(0.65, 0.52, 0.61, "#f5e4c5");
         body.position.y = 0.31;
@@ -225,7 +266,7 @@ export class GameView {
         const roof = new THREE.Mesh(
           new THREE.CylinderGeometry(0, 0.52, 0.34, 4),
           new THREE.MeshStandardMaterial({
-            color: i % 3 ? "#c76845" : "#ad523c",
+            color: ["#a9583c", "#677b70", "#b38a50", "#9e5547"][i % 4],
             roughness: 0.9,
           }),
         );
@@ -257,18 +298,30 @@ export class GameView {
         const nozzle = this.box(0.24, 0.055, 0.055, "#d2be89");
         nozzle.position.set(0.15, 0.95, 0.19);
         group.add(body, tank, rim, pipe, nozzle);
+        spray = new THREE.Group();
+        for (let j = 0; j < 6; j++) {
+          const angle = j * Math.PI / 3;
+          const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0.15, 0.95, 0.19),
+            new THREE.Vector3(Math.cos(angle) * 0.7, 1.25, Math.sin(angle) * 0.7),
+            new THREE.Vector3(Math.cos(angle) * 1.2, 0.12, Math.sin(angle) * 1.2));
+          spray.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(10)),
+            new THREE.LineBasicMaterial({ color: "#9ce4e8", transparent: true, opacity: 0.65 })));
+        }
+        spray.visible = false;
+        group.add(spray);
       } else if (kind === "break") {
-        for (let j = 0; j < 3; j++) {
-          const stripe = this.box(0.08, 0.015, 0.78, "#b6a48a");
-          stripe.position.set(-0.25 + j * 0.25, 0.06, 0);
-          group.add(stripe);
+        for (let j = 0; j < 5; j++) {
+          const pebble = new THREE.Mesh(new THREE.DodecahedronGeometry(0.025 + j * 0.005),
+            new THREE.MeshStandardMaterial({ color: "#a89779", roughness: 1 }));
+          pebble.position.set(Math.sin(i + j * 2) * 0.35, 0.045, Math.cos(i * 2 + j) * 0.36);
+          group.add(pebble);
         }
       } else if (kind === "grass") {
         for (let j = 0; j < 3; j++) {
           const shrub = new THREE.Mesh(
             new THREE.DodecahedronGeometry(0.105 + (i % 3) * 0.015),
             new THREE.MeshStandardMaterial({
-              color: x === 0 ? "#b18b42" : "#718b51",
+              color: i % 8 === 0 ? "#b18b42" : "#718b51",
               roughness: 1,
             }),
           );
@@ -280,16 +333,36 @@ export class GameView {
           group.add(shrub);
         }
       } else if (kind === "source") {
-        const marker = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.36, 0.36, 0.04, 24),
-          new THREE.MeshStandardMaterial({ color: "#e37b44" }),
-        );
-        marker.position.y = 0.08;
-        const stake = this.box(0.055, 0.58, 0.055, "#875c3e");
-        stake.position.y = 0.33;
-        const flag = this.box(0.3, 0.2, 0.025, "#b23e2c");
-        flag.position.set(0.14, 0.55, 0);
-        group.add(marker, stake, flag);
+        for (let j = 0; j < 3; j++) {
+          const trunk = this.box(0.09, 0.55 + j * 0.15, 0.09, "#493f30");
+          trunk.position.set((j - 1) * 0.25, 0.3, (j % 2) * 0.2);
+          trunk.rotation.z = (j - 1) * 0.2;
+          group.add(trunk);
+          const smoke = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + j * 0.09),
+            new THREE.MeshStandardMaterial({ color: "#828379", transparent: true, opacity: 0.45, depthWrite: false }));
+          smoke.position.set(0.15 + j * 0.14, 0.9 + j * 0.42, 0);
+          group.add(smoke);
+        }
+      } else if (kind === "stone") {
+        for (let j = 0; j < 2; j++) {
+          const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.17 + (i % 3) * 0.04),
+            new THREE.MeshStandardMaterial({ color: i % 2 ? "#999b88" : "#b2b09c", roughness: 1 }));
+          rock.position.set((j - 0.5) * 0.42, 0.09, Math.sin(i + j) * 0.16);
+          rock.scale.y = 0.5;
+          group.add(rock);
+        }
+      }
+      // Vary the home within its own footprint; the hex itself remains aligned.
+      if (kind === "house") {
+        const home = new THREE.Group();
+        for (const child of [...group.children]) if (child !== tile) home.add(child);
+        home.rotation.y = ((i % 3) - 1) * 0.16;
+        home.position.set(Math.sin(i * 3) * 0.065, 0, Math.cos(i * 2) * 0.045);
+        home.scale.setScalar(0.88 + (i % 3) * 0.05);
+        group.add(home);
+        const path = this.box(0.17, 0.008, 0.2, "#c6ba91");
+        path.position.set(home.position.x, 0.035, 0.47);
+        group.add(path);
       }
       const flame = new THREE.Group();
       for (let j = 0; j < 3; j++) {
@@ -301,10 +374,10 @@ export class GameView {
         flame.add(cone);
       }
       flame.position.y = kind === "house" ? 0.32 : 0;
-      flame.visible = false;
+      flame.visible = kind === "source";
       group.add(flame);
       const halo = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.91, 0.91),
+        new THREE.CircleGeometry(HEX_RADIUS * 0.96, 6, Math.PI / 6),
         new THREE.MeshBasicMaterial({
           color: "#3bbaab",
           opacity: 0.27,
@@ -331,23 +404,38 @@ export class GameView {
       water.position.y = 0.13;
       water.visible = false;
       group.add(water);
-      this.water.push(water);
-      this.halos.push(halo);
-      this.flames.push(flame);
-      this.bodies.push(body);
-      this.groups.push(group);
+      this.water[i] = water;
+      this.spray[i] = spray;
+      this.halos[i] = halo;
+      this.flames[i] = flame;
+      this.bodies[i] = body;
+      this.groups[i] = group;
       this.board.add(group);
     });
     this.coverage(this.hasCoverage);
+    this.pickables = [...this.tiles, ...this.bodies.filter((body): body is THREE.Mesh => body !== null)];
+    this.renderer.shadowMap.needsUpdate = true;
+    performanceRecorder.layout(performance.now() - started);
   }
-  preview(i: number, valid: boolean, station: boolean): void {
+  metrics() { return { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles, geometries: this.renderer.info.memory.geometries }; }
+  preview(i: number, valid: boolean, station: boolean, tool: Tool = "break"): void {
     this.hover.visible = i >= 0;
     if (i >= 0) {
-      const { x, z } = coords(i);
-      this.hover.position.set(x - 3.5, 0.085, z - 3.5);
+      const { x, z } = hexPosition(i);
+      this.hover.position.set(x, 0.085, z);
       (this.hover.material as THREE.MeshBasicMaterial).color.set(
         valid ? "#efb85b" : "#d75242",
       );
+    }
+    this.disposeObject(this.ghost);
+    this.ghost.clear();
+    this.ghost.visible = i >= 0 && valid && (tool === "house" || tool === "station") && this.layout[i] === "grass";
+    if (this.ghost.visible) {
+      this.ghost.position.copy(this.hover.position);
+      const shape = new THREE.Mesh(tool === "house" ? new THREE.BoxGeometry(0.65, 0.55, 0.6) : new THREE.CylinderGeometry(0.25, 0.25, 0.8, 12),
+        new THREE.MeshBasicMaterial({ color: "#f4df91", transparent: true, opacity: 0.48, wireframe: true }));
+      shape.position.y = 0.32;
+      this.ghost.add(shape);
     }
     this.previewCell = station && valid ? i : -1;
     this.coverage(this.hasCoverage);
@@ -377,8 +465,17 @@ export class GameView {
   }
   update(sim: Simulation | null, elapsed: number): void {
     this.clock += elapsed;
+    this.animateWater(this.reducedMotion ? 0 : this.clock);
+    const stateChanged = sim !== this.lastSimulation || (sim?.tick ?? -1) !== this.lastTick;
+    this.lastSimulation = sim;
+    this.lastTick = sim?.tick ?? -1;
     if (sim)
       sim.cells.forEach((cell, i) => {
+        const spray = this.spray[i];
+        if (spray) {
+          spray.visible = !sim.done && sim.cells.some((target, j) => target.cooling > 0 && distance(i, j) <= RULES.stationRadius);
+          if (!this.reducedMotion) spray.rotation.y = this.clock * 0.4;
+        }
         this.flames[i].visible = cell.burning;
         this.water[i].visible =
           !sim.done && cell.cooling > 0 && !cell.burning && !cell.burned;
@@ -389,15 +486,27 @@ export class GameView {
         if (cell.burning && !this.reducedMotion)
           this.flames[i].scale.y = 0.9 + Math.sin(this.clock * 8 + i) * 0.16;
         const body = this.bodies[i];
-        if (body && cell.kind === "house") {
+        if (stateChanged && body && cell.kind === "house") {
+          if (this.groups[i].userData.burned !== cell.burned) {
+            this.groups[i].userData.burned = cell.burned;
+            this.renderer.shadowMap.needsUpdate = true;
+          }
           const material = body.material as THREE.MeshStandardMaterial;
           material.color.set(cell.burned ? "#514f44" : "#f5e4c5");
           if (!cell.burned)
             material.color.lerp(
-              new THREE.Color("#e77a38"),
+              this.heatColor,
               Math.min(0.85, cell.heat / 75),
             );
-          // Keep the land square full-sized; only the building collapses.
+          this.groups[i].traverse((child) => {
+            if (child.userData.window && child instanceof THREE.Mesh) {
+              const material = child.material as THREE.MeshStandardMaterial;
+              const lit = sim.done && !cell.burning && !cell.burned;
+              material.color.set(lit ? "#ffd386" : "#456960");
+              material.emissive.set(lit ? "#b87424" : "#000000");
+            }
+          });
+          // Keep terrain full-sized; only the building collapses.
           this.groups[i].children.forEach((child) => {
             if (
               child === this.tiles[i] ||
@@ -413,28 +522,31 @@ export class GameView {
               mat.emissive.set(lit ? "#b87424" : "#000000");
             }
             child.userData.originalY ??= child.position.y;
-            child.scale.y = cell.burned ? 0.2 : 1;
+            child.userData.originalScaleY ??= child.scale.y;
+            child.scale.y = child.userData.originalScaleY * (cell.burned ? 0.2 : 1);
             child.position.y =
               child.userData.originalY * (cell.burned ? 0.2 : 1);
           });
         }
-        if (cell.burned || cell.burning)
+        if (stateChanged && (cell.burned || cell.burning))
           (this.tiles[i].material as THREE.MeshStandardMaterial).color.set(
             cell.burned ? "#666354" : "#bf864b",
           );
       });
-    if (sim && this.eventCount !== sim.events.length) {
+    if (sim && this.hasRoutes && this.eventCount !== sim.events.length) {
       this.clearRoutes();
+      const points: THREE.Vector3[] = [];
       for (const event of sim.events) {
         if (event.type !== "ignite" || event.source < 0) continue;
-        const a = coords(event.source),
-          b = coords(event.target);
-        const points = [
-          new THREE.Vector3(a.x - 3.5, 0.98, a.z - 3.5),
-          new THREE.Vector3(b.x - 3.5, 0.98, b.z - 3.5),
-        ];
-        this.routes.add(
-          new THREE.Line(
+        const a = hexPosition(event.source),
+          b = hexPosition(event.target);
+        points.push(
+          new THREE.Vector3(a.x, 0.98, a.z),
+          new THREE.Vector3(b.x, 0.98, b.z),
+        );
+      }
+      if (points.length) this.routes.add(
+          new THREE.LineSegments(
             new THREE.BufferGeometry().setFromPoints(points),
             new THREE.LineBasicMaterial({
               color: "#f04c24",
@@ -443,7 +555,6 @@ export class GameView {
             }),
           ),
         );
-      }
       this.eventCount = sim.events.length;
     }
     this.routes.visible = this.hasRoutes;
@@ -458,7 +569,7 @@ export class GameView {
       ),
       this.camera,
     );
-    const hits = this.raycaster.intersectObjects(this.groups, true);
+    const hits = this.raycaster.intersectObjects(this.pickables, false);
     for (const hit of hits) {
       let node: THREE.Object3D | null = hit.object;
       while (node && node !== this.board) {
@@ -468,34 +579,42 @@ export class GameView {
     }
     return -1;
   }
+  showGuides(show: boolean): void {
+    this.hasGuides = show;
+    this.guides.visible = show;
+  }
+  adjustCamera(action: "in" | "out" | "up" | "down" | "reset"): void {
+    if (action === "reset") { this.zoomLevel = 1; this.pitch = 50; this.azimuth = 25; }
+    if (action === "in") this.zoomLevel = Math.min(1.65, this.zoomLevel + 0.1);
+    if (action === "out") this.zoomLevel = Math.max(0.7, this.zoomLevel - 0.1);
+    if (action === "up") this.pitch = Math.min(70, this.pitch + 8);
+    if (action === "down") this.pitch = Math.max(30, this.pitch - 8);
+    this.hover.visible = false;
+    this.ghost.visible = false;
+    this.hovered = -1;
+    this.resize();
+  }
+  setPerformanceQuality(enabled: boolean): void {
+    this.performanceQuality = enabled;
+    this.renderer.shadowMap.enabled = !enabled;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.resize();
+  }
   private resize(): void {
-    const width = this.host.clientWidth,
-      height = this.host.clientHeight;
+    const width = this.host.clientWidth, height = this.host.clientHeight;
     if (!width || !height) return;
-    const aspect = width / height;
-    // Reserve top/bottom HUD space. Fit the board, house height and edge labels,
-    // never the enormous decorative ground plane, into the game safe area.
-    const safe = { left: 420, top: 210, width: 1260, height: 610 };
-    this.camera.updateMatrixWorld(true);
-    const bounds = new THREE.Box2();
-    for (const x of [-4.35, 4.95])
-      for (const y of [-0.55, 1.65])
-        for (const z of [-4.35, 4.95]) {
-          const point = new THREE.Vector3(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
-          bounds.expandByPoint(new THREE.Vector2(point.x, point.y));
-        }
-    const size = bounds.getSize(new THREE.Vector2());
-    const center = bounds.getCenter(new THREE.Vector2());
-    const span = Math.max(size.x / (aspect * 2 * safe.width / width), size.y / (2 * safe.height / height)) * 1.025;
-    const centerX = center.x - (2 * (safe.left + safe.width / 2) / width - 1) * span * aspect;
-    const centerY = center.y - (1 - 2 * (safe.top + safe.height / 2) / height) * span;
-    this.camera.left = centerX - span * aspect;
-    this.camera.right = centerX + span * aspect;
-    this.camera.top = centerY + span;
-    this.camera.bottom = centerY - span;
+    const pitch = THREE.MathUtils.degToRad(this.pitch);
+    const yaw = THREE.MathUtils.degToRad(this.azimuth);
+    const distance = 21.5 / this.zoomLevel;
+    this.camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance,
+      Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
+    this.camera.lookAt(0, 0.1, 0);
+    this.camera.aspect = width / height;
+    this.camera.setViewOffset(width, height, -width * 0.045, height * 0.02, width, height);
     this.camera.updateProjectionMatrix();
+    this.guides.visible = this.hasGuides;
     const scale = this.host.getBoundingClientRect().width / width;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * scale, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.performanceQuality ? 1 : 1.5) * scale);
     this.renderer.setSize(width, height, false);
   }
 }

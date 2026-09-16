@@ -1,0 +1,45 @@
+{
+  "viewport": "1280x720",
+  "dpr": 1,
+  "phases": {
+    "title-screen": {
+      "samples": 247,
+      "fps": 31.8,
+      "frameP95": 31.6,
+      "cpuP95": 5.9,
+      "slowFrames": 1,
+      "calls": 346,
+      "triangles": 11378,
+      "geometries": 345
+    },
+    "build": {
+      "samples": 570,
+      "fps": 32,
+      "frameP95": 31.6,
+      "cpuP95": 5.4,
+      "slowFrames": 0,
+      "calls": 349,
+      "triangles": 11490,
+      "geometries": 356
+    },
+    "grid-dialog": {
+      "samples": 414,
+      "fps": 32,
+      "frameP95": 31.7,
+      "cpuP95": 5.5,
+      "slowFrames": 0,
+      "calls": 348,
+      "triangles": 11439,
+      "geometries": 356
+    }
+  },
+  "layoutUpdates": 6,
+  "layoutMaxMs": 18.6,
+  "lastLayoutMs": [
+    1.6,
+    1,
+    0.8,
+    0.9,
+    0.7
+  ]
+}

@@ -732,6 +732,11 @@ dialog>.eyebrow {
   font-size:24px;
   font-weight:700;
 }
+#outcome-completion {
+  font-size:18px;
+  color:#6b785d;
+  margin-top:16px;
+}
 #outcome-tip {
   font-size:20px;
   color:#6b785d;
@@ -824,8 +829,8 @@ dialog>.eyebrow {
 }
 .a11y-grid {
   display:grid;
-  grid-template-columns:repeat(8,1fr);
-  gap:7px;
+  grid-template-columns:repeat(17,1fr);
+  gap:4px 0;
 }
 .a11y-grid button {
   height:65px;
@@ -833,7 +838,14 @@ dialog>.eyebrow {
   padding:7px;
   font-size:20px;
   background:#d5dfb9;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  border-radius:0;
 }
+.a11y-grid button:focus-visible { background:#f3c772; }
+.camera-dock { position:absolute; right:48px; bottom:260px; text-align:right; }
+.camera-dock span { font-size:16px; color:#344c3d; text-shadow:0 1px 4px #fff; }
+.camera-dock>div { display:flex; gap:7px; margin-top:9px; }
+.camera-dock button { padding:9px 14px; font-size:18px; background:#f6f0dcdf; }
 .a11y-grid small {
   display:block;
   font-size:12px;
@@ -864,3 +876,48 @@ dialog>.eyebrow {
     scroll-behavior:auto!important;
   }
 }
+/* Patrol desk UI: cool ink and amber tools, against the warm miniature world. */
+:root { --green:#203b4d; --gold:#e4ae58; }
+button { border-radius:5px; }
+.primary { background:#e4ae58; color:#172c3b; box-shadow:0 4px 0 #976b30; }
+.primary:hover:not(:disabled) { background:#f4c878; box-shadow:0 4px 0 #976b30; }
+.resource-ribbon,.build-dock { background:#192f3eef; color:#eff2e9; border:1px solid #627481; border-bottom:4px solid #101f2c; border-radius:5px; }
+.resource-ribbon>div>span,.resource-ribbon strong small,.dock-top,#tool-note,.time-block span,.time-block small { color:#c0ced4; }
+.resource-ribbon .goal-resource { background:#294453; }
+.resource-ribbon .goal-resource strong { color:#f1bd68; }
+.town-label { color:#203b4d; }
+.town-label .eyebrow { color:#365568; }
+.tool { color:#e2e9e9; background:#243f50; border:1px solid #607483; border-radius:5px; }
+.tool small,.tool svg { color:#b8cbd1; }
+.tool.selected { background:#e4ae58; color:#192f3e; border-color:#f8d99f; box-shadow:inset 0 -3px #af803a; }
+.tool.selected svg,.tool.selected small { color:#233b47; }
+.tool:hover:not(:disabled) { background:#36576a; color:#fff; }
+.tool.selected:hover:not(:disabled) { background:#f0be72; color:#192f3e; }
+.small-actions button,.speed { color:#e2e9e9; background:#294453; border-color:#607483; }
+.small-actions button:hover:not(:disabled),.speed:hover:not(:disabled) { background:#3b5a6c; }
+.map-toggles button,.live-label,.system-actions #sound,.system-actions .icon-button,.camera-dock button { background:#203b4deb; color:#ecf0eb; border:1px solid #627481; border-radius:4px; }
+.map-toggles button[aria-pressed=true] { background:#e4ae58; color:#172c3b; }
+.map-toggles button:hover:not(:disabled),.system-actions button:hover:not(:disabled),.camera-dock button:hover:not(:disabled) { background:#36576a; color:#fff; }
+.insight { background:#f4eedfeb; border-left:4px solid #cc9442; border-radius:0; }
+.mission-card { position:absolute; left:48px; top:430px; width:345px; padding:20px; color:#eef2ec; background:#1b3344ef; border-top:3px solid #dda957; }
+.mission-card .eyebrow { font-size:13px; color:#efbd73; letter-spacing:2px; }
+.mission-card h2 { font-size:23px; margin:10px 0; }
+.mission-card p { font-size:16px; line-height:1.65; color:#c6d2d8; }
+.mission-targets { display:flex; gap:28px; margin:17px 0; }
+.mission-targets span { font-size:14px; color:#c6d2d8; }
+.mission-targets b { display:block; font-size:29px; color:#f2bd6a; }
+#mission-status { border-top:1px solid #4c6575; padding-top:12px; }
+.title-screen .mission-card,.title-screen .camera-dock { visibility:hidden; }
+.title-screen #modal-shade { background:linear-gradient(90deg,#142d40f5 0%,#142d40df 37%,#142d4010 80%); }
+.title-card { top:90px; width:810px; }
+.title-card h2 { color:#f8efe0; text-shadow:none; font-size:87px; }
+.title-card .eyebrow { color:#eabd7c; font-size:17px; letter-spacing:3px; }
+.title-tagline { color:#f2c78d; font-size:34px; margin:18px 0; }
+.title-story { color:#d7e1e3; font-size:21px; }
+.title-story b { display:block; color:#fff1d4; font-weight:600; }
+.title-facts { color:#b7ccd4; gap:15px; margin:23px 0 25px; }
+.title-card>small { color:#b9ccd4; margin-top:17px; }
+.title-actions .quiet { color:#d7e1e3; }
+.title-actions .secondary { color:#1f3c4f; }
+.mission-verdict { font-size:20px; color:#284c61; padding:14px 20px; margin-top:17px; border-top:1px solid #c1c8c5; }
+#modal-shade { backdrop-filter:none; }

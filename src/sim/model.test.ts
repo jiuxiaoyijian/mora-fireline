@@ -13,6 +13,7 @@ import {
   step,
   runToEnd,
   result,
+  neighbors,
 } from "./model.ts";
 
 test("cooling feedback reports actual allocation, never mere coverage", () => {
@@ -29,7 +30,7 @@ test("cooling feedback reports actual allocation, never mere coverage", () => {
   );
   assert.equal(sim.cells[index(1, 2)].cooling, 0);
   assert.equal(
-    sim.cells[index(2, 2)].cooling,
+    sim.cells[index(3, 2)].cooling,
     0,
     "a covered but unheated house must not display active protection",
   );
@@ -48,9 +49,9 @@ test("default scenario contains 12 houses and no defenses; the unprotected settl
 });
 test("a continuous western firebreak protects all 12 houses within budget", () => {
   const layout = defaultLayout();
-  for (let z = 1; z <= 6; z++) layout[index(1, z)] = "break";
+  for (const z of [1, 2, 4, 5, 6]) layout[index(1, z)] = "break";
   assert.equal(canStart(layout), true);
-  assert.equal(counts(layout).spent, 6);
+  assert.equal(counts(layout).spent, 5);
   const sim = runToEnd(layout);
   assert.equal(result(sim).saved, 12);
   assert.equal(
@@ -63,7 +64,7 @@ test("a separate station strategy also protects all houses", () => {
   for (const [x, z] of [
     [1, 2],
     [1, 5],
-    [3, 1],
+    [2, 4],
   ])
     layout[index(x, z)] = "station";
   assert.equal(counts(layout).spent, 12);
@@ -103,16 +104,16 @@ test("completed simulations cannot advance again", () => {
 test("home inventory prevents adding a thirteenth house but supports a move", () => {
   const initial = defaultLayout();
   assert.ok(editLayout(initial, index(1, 1), "house").error);
-  const removed = editLayout(initial, index(2, 2), "erase").layout;
+  const removed = editLayout(initial, index(3, 2), "erase").layout;
   assert.equal(canStart(removed), false);
   const moved = editLayout(removed, index(1, 1), "house").layout;
   assert.equal(canStart(moved), true);
-  assert.equal(moved[index(2, 2)], "grass");
-  assert.equal(initial[index(2, 2)], "house");
+  assert.equal(moved[index(3, 2)], "grass");
+  assert.equal(initial[index(3, 2)], "house");
 });
 test("station budget cannot exceed 12 and removing a station refunds 4", () => {
   let layout = defaultLayout();
-  for (const z of [1, 2, 3])
+  for (const z of [1, 2, 5])
     layout = editLayout(layout, index(1, z), "station").layout;
   assert.equal(counts(layout).spent, 12);
   assert.ok(editLayout(layout, index(1, 4), "station").error);
@@ -121,9 +122,9 @@ test("station budget cannot exceed 12 and removing a station refunds 4", () => {
   assert.equal(editLayout(layout, index(1, 4), "station").error, undefined);
 });
 test("replacing a house or defense updates both resources correctly", () => {
-  const replaced = editLayout(defaultLayout(), index(2, 2), "station").layout;
+  const replaced = editLayout(defaultLayout(), index(3, 2), "station").layout;
   assert.deepEqual(counts(replaced), { homes: 11, spent: 4 });
-  const restored = editLayout(replaced, index(2, 2), "house").layout;
+  const restored = editLayout(replaced, index(3, 2), "house").layout;
   assert.deepEqual(counts(restored), { homes: 12, spent: 0 });
 });
 test("boundary, fixed fire sources, and invalid coordinates cannot be edited", () => {
@@ -172,7 +173,7 @@ test("all ignition events have adjacent real sources and chronological timestamp
     assert.ok(event.tick >= lastTick);
     lastTick = event.tick;
     if (event.type === "ignite")
-      assert.ok([1, 8].includes(Math.abs(event.source - event.target)));
+      assert.ok(neighbors(event.source).includes(event.target));
   }
   assert.ok(sim.events.length > 12);
 });

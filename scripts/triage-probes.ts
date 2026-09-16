@@ -38,15 +38,16 @@ for (let a = 0; a < available.length; a++) for (let b = a + 1; b < available.len
   doubleStations.push({ positions: [label(available[a]), label(available[b])], ...measure(layout) });
 }
 const westernBreakSubsets = [];
-for (let mask = 0; mask < 64; mask++) {
+const defenseRows = [1, 2, 4, 5, 6];
+for (let mask = 0; mask < 2 ** defenseRows.length; mask++) {
   const layout = base.slice(); const positions = [];
-  for (let z = 1; z <= 6; z++) if (mask & (1 << (z - 1))) {
+  for (const [bit, z] of defenseRows.entries()) if (mask & (1 << bit)) {
     layout[index(1, z)] = 'break'; positions.push(label(index(1, z)));
   }
   westernBreakSubsets.push({ positions, ...measure(layout) });
 }
 const wall = base.slice();
-for (let z = 1; z <= 6; z++) wall[index(1, z)] = 'break';
+for (const z of defenseRows) wall[index(1, z)] = 'break';
 const histogram = (rows: { saved: number }[]) => rows.reduce<Record<string, number>>((acc, row) => {
   acc[String(row.saved)] = (acc[String(row.saved)] ?? 0) + 1;
   return acc;
@@ -54,7 +55,7 @@ const histogram = (rows: { saved: number }[]) => rows.reduce<Record<string, numb
 const best = [...singleStations].sort((a, b) => b.saved - a.saved || a.position.localeCompare(b.position));
 const passingBreaks = westernBreakSubsets.filter(x => x.success).sort((a, b) => a.spent - b.spent || b.saved - a.saved);
 console.log(JSON.stringify({
-  scope: 'Current fixed map, default 12 houses unchanged. All 24 single-station sites, 276 pairs, and 64 subsets of the western B2–B7 firebreak line. Not an exhaustive search over all house relocations or mixed defenses.',
+  scope: 'Hex valley v2: default 12 homes, all legal empty single-station sites and pairs, 32 subsets of B2/B3/B5/B6/B7. Natural rock belt is immutable. Not exhaustive over house moves or mixed defenses.',
   baseline: measure(base),
   fullWesternBreak: measure(wall),
   singleStation: { total: singleStations.length, histogram: histogram(singleStations), best: best.slice(0, 6) },
