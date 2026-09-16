@@ -43,7 +43,7 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.setAttribute(
       "aria-label",
-      "火线街区三维地图；可使用下方无障碍网格进行键盘操作",
+      "火线街区三维地图；可打开键盘建造网格进行操作",
     );
     this.host.appendChild(this.renderer.domElement);
     this.camera.position.set(10, 12, 14);
@@ -128,6 +128,7 @@ export class GameView {
     });
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
+    window.addEventListener("stage-resize", () => this.resize());
     this.resize();
   }
 
@@ -472,12 +473,29 @@ export class GameView {
       height = this.host.clientHeight;
     if (!width || !height) return;
     const aspect = width / height;
-    const span = Math.max(4.1, 6.2 / aspect);
-    this.camera.left = -span * aspect;
-    this.camera.right = span * aspect;
-    this.camera.top = span;
-    this.camera.bottom = -span;
+    // Reserve top/bottom HUD space. Fit the board, house height and edge labels,
+    // never the enormous decorative ground plane, into the game safe area.
+    const safe = { left: 420, top: 210, width: 1260, height: 610 };
+    this.camera.updateMatrixWorld(true);
+    const bounds = new THREE.Box2();
+    for (const x of [-4.35, 4.95])
+      for (const y of [-0.55, 1.65])
+        for (const z of [-4.35, 4.95]) {
+          const point = new THREE.Vector3(x, y, z).applyMatrix4(this.camera.matrixWorldInverse);
+          bounds.expandByPoint(new THREE.Vector2(point.x, point.y));
+        }
+    const size = bounds.getSize(new THREE.Vector2());
+    const center = bounds.getCenter(new THREE.Vector2());
+    const span = Math.max(size.x / (aspect * 2 * safe.width / width), size.y / (2 * safe.height / height)) * 1.025;
+    const centerX = center.x - (2 * (safe.left + safe.width / 2) / width - 1) * span * aspect;
+    const centerY = center.y - (1 - 2 * (safe.top + safe.height / 2) / height) * span;
+    this.camera.left = centerX - span * aspect;
+    this.camera.right = centerX + span * aspect;
+    this.camera.top = centerY + span;
+    this.camera.bottom = centerY - span;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
+    const scale = this.host.getBoundingClientRect().width / width;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio * scale, 2));
+    this.renderer.setSize(width, height, false);
   }
 }

@@ -18,67 +18,14 @@ import {
 } from "./sim/model.ts";
 import type { Layout, Tool, Simulation, Result } from "./sim/model.ts";
 
-const icons = {
-  house: '<path d="m3 10 9-7 9 7M6 9v11h12V9M10 20v-7h4v7"/>',
-  break: '<path d="M4 5h16M4 12h16M4 19h16M7 5v14M17 5v14"/>',
-  station: '<path d="M4 20V8h16v12H4ZM9 20v-6h6v6M12 2v8M8 6h8"/>',
-  erase: '<path d="m4 13 9-9 7 7-9 9H8l-4-4v-3ZM9 8l7 7M12 20h9"/>',
-  fire: '<path d="M12 2c1 6 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 4-7 0 3 1 4 2 5 2-3 0-6 0-10Z"/>',
-};
-const svg = (name: keyof typeof icons) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-const app = document.querySelector<HTMLDivElement>("#app")!;
-app.innerHTML = `
-  <header class="topbar">
-    <a class="brand" href="./"><span class="brand-icon">${svg("fire")}</span><span>火线街区<small>FIRELINE / 林缘小镇的火险季</small></span></a>
-    <div class="header-right"><button id="menu-open" class="quiet">标题</button><button id="sound" class="quiet" aria-pressed="false">声音：关</button><span class="version">单关体验 · v0.2 开发中</span><button id="help-open" class="quiet">玩法说明 <span>?</span></button></div>
-  </header>
-  <main>
-    <section class="intro"><div><div class="eyebrow">01 / 松风镇 · 山火将至</div><h1>让风过去，让家留下。</h1><p>为 12 户家庭规划家园，用防火带与喷淋守住至少 8 栋。</p></div><div class="objective"><span>本次目标</span><strong>8<span> / 12</span></strong><small>栋住宅未燃烧、未烧毁</small></div></section>
-    <div class="workspace">
-      <aside class="sidebar">
-        <section class="panel build-panel"><div class="section-label"><h2>街区工具</h2><span id="phase-badge">准备阶段</span></div>
-          <div class="resources"><div><span>已安置住宅</span><strong id="homes">12 <small>/ 12</small></strong></div><div><span>剩余防灾预算</span><strong id="budget">12 <small>点</small></strong></div></div>
-          <div class="tools" role="group" aria-label="建造工具">
-            <button data-tool="house" class="tool" aria-pressed="false">${svg("house")}<span><b>住宅</b><small>选中住宅 → 点击空地搬迁</small></span><kbd>1</kbd></button>
-            <button data-tool="break" class="tool selected" aria-pressed="true">${svg("break")}<span><b>防火带</b><small>隔断传播 · 1 点 / 格</small></span><kbd>2</kbd></button>
-            <button data-tool="station" class="tool" aria-pressed="false">${svg("station")}<span><b>蓄水喷淋</b><small>预防起火 · 4 点 / 座</small></span><kbd>3</kbd></button>
-            <button data-tool="erase" class="tool" aria-pressed="false">${svg("erase")}<span><b>拆除</b><small>退还预算或住宅</small></span><kbd>4</kbd></button>
-          </div>
-          <p class="tool-note" id="tool-note">点击草地或住宅铺设防火带。住宅被替换后，需要在其他位置补齐。</p>
-          <div class="small-actions"><button id="undo" disabled>撤销</button><button id="cancel-move" hidden>取消搬迁</button><button id="reset-layout">默认街区</button><button id="clear-layout">清空重建</button></div>
-        </section>
-        <section class="panel forecast"><div class="eyebrow">山火预报 / 同一关条件固定</div><div class="wind"><span>西</span><span class="wind-arrow">⟶</span><strong>向东吹</strong></div><p>山外雷暴引起山火，正向小镇靠近。<br>空地也会燃烧，连续隔离才有效。</p><div class="forecast-foot"><span>模拟时长 <b>45 秒</b></span><span>目标 <b>≥ 8 栋</b></span></div></section>
-        <div class="save-status" id="save-status">布局自动保存在此浏览器</div>
-      </aside>
-      <section class="game-panel" aria-label="家园防线">
-        <div class="map-toolbar"><span class="live-label"><i id="state-dot"></i><b id="map-status">规划家园</b></span><div class="map-toggles"><button id="coverage" aria-pressed="false">喷淋覆盖</button><button id="routes" aria-pressed="false">传播路径</button></div></div>
-        <div class="map-wrap"><div id="scene"></div><div class="map-caption"><span>街区 01</span><small>8 × 8 / 西侧为火线</small></div><div class="hover-tip" id="hover-tip">选择工具后，点击格子进行建造</div><div id="warning-overlay" class="warning-overlay" hidden><span class="eyebrow">居民已转移 · 守住大家的家园</span><strong>山火即将抵达</strong><p>风向：西 → 东</p><b id="warning-count">3</b></div><div id="pause-overlay" class="pause-overlay" hidden><span>守护已暂停</span><small>布局与火势已保留</small><button id="overlay-resume" class="primary">继续守护</button></div></div>
-        <div class="control-bar"><div class="time-block"><span id="time-label">等待开始</span><div class="progress-track"><div id="progress"></div></div><small id="time">00.0 / 45.0 秒</small></div><div class="control-buttons"><button id="skip-result" class="speed" hidden>查看结果</button><button id="speed" class="speed" aria-label="切换模拟速度">1×</button><button id="primary" class="primary">准备好了 <span>→</span></button></div></div>
-        <div class="insight" id="insight"><span class="insight-number">01</span><div><strong>先为家园添一道防线。</strong><p>试着在西侧草地放一格防火带，看看预算如何变化；还可以撤销。孤立一格不保证挡住山火。</p></div></div>
-      </section>
-    </div>
-    <section class="report panel" id="report" hidden aria-label="防线复盘"><div class="report-head"><div><div class="eyebrow">AFTER THE FIRE / 家园回望</div><h2 id="report-title"></h2><p id="comparison"></p></div><div class="report-score" id="report-score"></div></div><div class="report-body"><div><h3>这次发生了什么</h3><p id="report-reason"></p><ol id="event-list"></ol></div><div class="report-next"><h3>再守一次家园</h3><p>返回建造，调整一处布局，再用相同火情验证你的判断。</p><div><button id="edit-again" class="primary">调整布局 →</button><button id="retry" class="secondary">原样重试</button></div></div></div></section>
-    <details class="accessible-map"><summary>键盘建造网格与地图状态</summary><p>与 3D 地图同步。选好工具后，用 Tab 选择格子并按 Enter 建造。</p><div id="grid" class="a11y-grid" role="group" aria-label="街区建造网格"></div></details>
-    <footer><span>FIRELINE · 每一道防线，都为家园而建。</span><span>规划家园 · 观察火势 · 改善防线</span></footer>
-  </main>
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <dialog id="help"><form method="dialog"><button class="dialog-close" aria-label="关闭玩法说明">×</button></form><div class="eyebrow">FIELD GUIDE / 玩法说明</div><h2>在山火来临之前，守住家园。</h2><ol class="help-steps"><li><b>先建一道防线。</b>用防火带隔断传播，用蓄水喷淋预防起火。安置好 12 栋家园后点击「准备好了」。山火沿风向由西向东进入。</li><li><b>找出原因。</b>实验后查看实际传播记录，也可以打开地图上的传播路径。</li><li><b>改变布局。</b>防火带不燃烧；蓄水喷淋在两格步行距离内共享降温能力。已燃烧的住宅无法被救回。</li><li><b>再次验证。</b>保住至少 8 栋住宅即达标。同样布局与火情，结果完全相同。</li></ol><p class="help-tip">开始前需放满 12 栋住宅；防灾预算为 12 点。快捷键 1–4 切换工具，空格开始 / 暂停。住宅工具可直接搬迁；撤销恢复上一步，Esc 取消搬迁。预警与火势失焦自动暂停。当前以桌面操作为主。</p><button id="help-close" class="primary">回到街区 →</button></dialog>
-`;
+import { gameTemplate, svg } from "./ui/template.ts";
+import { fitStage } from "./ui/stage.ts";
+import { GameDialogs } from "./ui/dialogs.ts";
 
-app.insertAdjacentHTML(
-  "beforeend",
-  `
-  <dialog id="title-screen" class="title-card" aria-labelledby="title-heading">
-    <div class="eyebrow">FIRELINE / 林缘小镇的火险季</div><h2 id="title-heading">火线街区</h2><p class="title-tagline">让风过去，<br>让家留下。</p>
-    <p>你是松风镇新社区的规划者。<br>山火将至，为 12 户家庭留住家园。</p>
-    <div class="title-facts"><span>建造防线</span><span>观察火势</span><span>再试一次</span></div>
-    <button id="enter-town" class="primary">进入小镇 →</button><button id="title-sound" class="quiet" aria-pressed="false">声音：关</button>
-    <small id="continue-note">单个街区 · 自由准备 · 45 秒火情，可加速</small>
-  </dialog>
-  <dialog id="outcome" class="outcome-card" aria-labelledby="outcome-heading"><div class="eyebrow">AFTER THE FIRE / 风过之后</div><h2 id="outcome-heading"></h2><div id="home-lights" class="home-lights" aria-hidden="true"></div><p id="outcome-summary"></p><p id="outcome-tip"></p><div class="outcome-actions"><button id="outcome-edit" class="primary">保留布局，改善防线 →</button><button id="outcome-details" class="secondary">看看火从哪里来</button></div></dialog>
-`,
-);
+const app = document.querySelector<HTMLDivElement>("#app")!;
+app.innerHTML = gameTemplate;
+fitStage(document.getElementById("game-stage")!);
+const dialogs = new GameDialogs(document.getElementById("game-stage")!);
 const audio = new GameAudio();
 const el = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -152,6 +99,7 @@ function selectTool(next: Tool): void {
     erase: "点击设施退还预算。拆除住宅会退回库存；留下的草地仍然可燃。",
   };
   el("tool-note").textContent = notes[next];
+  el("scene").dataset.activeTool = next;
 }
 let view: GameView;
 try {
@@ -197,6 +145,7 @@ function hoverCell(i: number): void {
 }
 function selectCell(i: number): void {
   hoverCell(i);
+  if (dialogs.current && dialogs.current !== "grid-dialog") return;
   if (phase !== "build") {
     toast("实验期间不能改建。结算后选择「调整布局」。");
     return;
@@ -209,6 +158,7 @@ function selectCell(i: number): void {
         ? "已取消搬迁。"
         : "住宅已选中。点击空草地完成搬迁，Esc 取消。",
     );
+    hoverCell(i);
     return;
   }
   if (moving >= 0 && layout[i] !== "grass") {
@@ -286,6 +236,8 @@ function syncUI(): void {
   el("skip-result").hidden =
     !sim || !(phase === "running" || phase === "paused");
   el("pause-overlay").hidden = phase !== "paused";
+  el("review-result").hidden = phase !== "finished";
+  el("game-stage").dataset.phase = phase;
   const primary = el<HTMLButtonElement>("primary");
   primary.innerHTML =
     phase === "build"
@@ -332,6 +284,7 @@ function start(): void {
     toast("请先安置全部 12 栋住宅。");
     return;
   }
+  dialogs.closeAll();
   moving = -1;
   sim = null;
   phase = "warning";
@@ -345,7 +298,7 @@ function start(): void {
   syncUI();
 }
 function backToBuild(): void {
-  el<HTMLDialogElement>("outcome").close();
+  dialogs.closeAll();
   phase = "build";
   el("report").hidden = true;
   sim = null;
@@ -354,14 +307,10 @@ function backToBuild(): void {
   el("insight").innerHTML =
     `<span class="insight-number">↗</span><div><strong>保留布局，验证下一个想法。</strong><p>${lastResult ? `上次保住 ${lastResult.saved} 栋。` : ""}每次只改动一处，会更容易看清变化的原因。</p></div>`;
   syncUI();
-  el("primary").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  el("primary").focus({ preventScroll: true });
 }
 function primaryAction(): void {
-  if (
-    el<HTMLDialogElement>("title-screen").open ||
-    el<HTMLDialogElement>("outcome").open
-  )
-    return;
+  if (dialogs.current) return;
   if (phase === "build") start();
   else if (phase === "running" || phase === "warning") {
     pausedFrom = phase;
@@ -380,7 +329,7 @@ function finish(): void {
   lastResult = result(sim);
   const r = lastResult;
   const diff = previousResult ? r.saved - previousResult.saved : 0;
-  el("report").hidden = false;
+  el("report").hidden = true;
   el("report-title").textContent = r.success
     ? "街区守住了。"
     : "火留下了下一次的线索。";
@@ -406,7 +355,7 @@ function finish(): void {
     })
     .join("");
   el("insight").innerHTML =
-    `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>${r.success ? "达到目标！" : "实验结束。"}保住 ${r.saved} / 12 栋住宅</strong><p>${previousResult ? `上次 ${previousResult.saved} 栋，本次 ${r.saved} 栋。` : "首次结果已记录。"}向下查看实验复盘，再调整布局。</p></div>`;
+    `<span class="insight-number">${String(r.saved).padStart(2, "0")}</span><div><strong>${r.success ? "达到目标！" : "实验结束。"}保住 ${r.saved} / 12 栋住宅</strong><p>${previousResult ? `上次 ${previousResult.saved} 栋，本次 ${r.saved} 栋。` : "首次结果已记录。"}打开复盘查看线索，再调整布局。</p></div>`;
   toast(
     `实验结束：保住 ${r.saved} / 12 栋住宅。${r.success ? "达到目标！" : "调整布局，再试一次。"}`,
   );
@@ -428,7 +377,7 @@ function finish(): void {
   el("outcome-tip").textContent = point
     ? `先回看 ${String.fromCharCode(65 + point.x)}${point.z + 1}：它在 ${(first.tick * RULES.dt).toFixed(1)} 秒最先起火。试着调整附近隔离或喷淋覆盖，再比较。`
     : "所有住宅都未起火。下一次可以保留保护效果，尝试节省一点预算。";
-  el<HTMLDialogElement>("outcome").showModal();
+  dialogs.open("outcome");
   syncUI();
 }
 
@@ -477,49 +426,50 @@ function replaceLayout(next: Layout, clearHistory: boolean): void {
   save();
   syncUI();
 }
-el("reset-layout").addEventListener("click", () =>
-  replaceLayout(defaultLayout(), true),
-);
-el("clear-layout").addEventListener("click", () =>
-  replaceLayout(blankLayout(), false),
-);
-const help = el<HTMLDialogElement>("help");
-el("help-open").addEventListener("click", () => {
+function showHelp(): void {
   autoPause();
-  help.showModal();
+  dialogs.open("help");
+}
+el("reset-layout").addEventListener("click", () => confirmAction(
+  "恢复默认街区？", "当前布局将被替换，成绩比较会清除。布局可以撤销。",
+  () => replaceLayout(defaultLayout(), true),
+));
+el("clear-layout").addEventListener("click", () => confirmAction(
+  "清空街区重新建造？", "住宅将退回库存，设施预算退还。你可以撤销这次操作。",
+  () => replaceLayout(blankLayout(), false),
+));
+el("help-open").addEventListener("click", showHelp);
+el("title-help").addEventListener("click", showHelp);
+el("help-close").addEventListener("click", () => dialogs.close());
+// All dialog exits go through the manager so inert and focus are always restored.
+el("help").querySelector("form")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  dialogs.close();
 });
-el("help-close").addEventListener("click", () => help.close());
 document.addEventListener("keydown", (event) => {
-  if (
-    help.open ||
-    el<HTMLDialogElement>("title-screen").open ||
-    el<HTMLDialogElement>("outcome").open ||
-    /INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName)
-  )
+  if (/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName)) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (dialogs.current) {
+      if (dialogs.current === "title-screen") return;
+      dialogs.close();
+    } else if (moving >= 0) {
+      selectTool(tool);
+      toast("已取消搬迁。");
+    } else openPause();
     return;
-  if (event.key === "Escape" && moving >= 0) {
-    selectTool(tool);
-    toast("已取消搬迁。");
   }
-  if (
-    phase === "build" &&
-    (event.ctrlKey || event.metaKey) &&
-    event.key.toLowerCase() === "z"
-  ) {
+  if (dialogs.current && dialogs.current !== "grid-dialog") return;
+  if (phase === "build" && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
     undo();
   }
-  if (
-    event.code === "Space" &&
-    !["BUTTON", "SUMMARY"].includes((event.target as HTMLElement).tagName)
-  ) {
+  if (event.code === "Space" && !["BUTTON", "SUMMARY"].includes((event.target as HTMLElement).tagName)) {
     event.preventDefault();
     primaryAction();
   }
   if (phase === "build" && ["1", "2", "3", "4"].includes(event.key))
-    selectTool(
-      (["house", "break", "station", "erase"] as Tool[])[Number(event.key) - 1],
-    );
+    selectTool((["house", "break", "station", "erase"] as Tool[])[Number(event.key) - 1]);
 });
 function autoPause(): void {
   if (phase === "running" || phase === "warning") {
@@ -581,38 +531,101 @@ function undo(): void {
 }
 el("undo").addEventListener("click", undo);
 el("cancel-move").addEventListener("click", () => selectTool(tool));
+el("scene").addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  if (phase === "build" && moving >= 0) {
+    selectTool(tool);
+    toast("已取消搬迁。");
+  }
+});
 el("skip-result").addEventListener("click", () => {
   if (!sim || !(phase === "running" || phase === "paused")) return;
   while (!sim.done) step(sim);
   finish();
 });
-const title = el<HTMLDialogElement>("title-screen");
 function openTitle(): void {
   autoPause();
+  dialogs.closeAll();
   document.body.classList.add("title-screen");
   const activeRun = phase === "paused";
-  el("enter-town").textContent = activeRun
-    ? "回到本次守护 →"
-    : storedLayout
-      ? "继续我的规划 →"
-      : "进入小镇 →";
+  el("enter-town").textContent = activeRun ? "继续本次守护 →" : phase === "finished" ? "查看本次成果 →" : storedLayout ? "继续建设 →" : "开始游戏 →";
   el("continue-note").textContent = activeRun
-    ? "本次进程已暂停，返回后可继续"
-    : storedLayout
-      ? "恢复此浏览器保存的布局 · 火情将重新开始"
-      : "自由准备 · 45 秒火情 · 可加速或直接看结果";
-  title.showModal();
+    ? "火情已暂停 · 布局与进度保留在本次会话"
+    : phase === "finished" ? "本次结果已保留 · 可以继续修改防线"
+    : storedLayout ? "继续此浏览器保存的布局" : "自由建设 · 45 秒火情 · 同一场山火可以重试";
+  dialogs.open("title-screen");
 }
 function enterTown(): void {
-  title.close();
+  dialogs.closeAll();
   document.body.classList.remove("title-screen");
-  el("primary").focus({ preventScroll: true });
+  if (phase === "finished") dialogs.open("outcome");
+  else el("primary").focus({ preventScroll: true });
 }
-el("menu-open").addEventListener("click", openTitle);
+function openPause(): void {
+  autoPause();
+  el("pause-close").textContent = phase === "paused" ? "继续守护" : "返回街区";
+  el<HTMLButtonElement>("pause-restart").disabled = phase === "build";
+  dialogs.open("pause-menu");
+}
+el("menu-open").addEventListener("click", openPause);
 el("enter-town").addEventListener("click", enterTown);
-title.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  enterTown();
+el("pause-close").addEventListener("click", () => {
+  dialogs.close();
+  if (phase === "paused") primaryAction();
+});
+el("pause-title").addEventListener("click", openTitle);
+el("pause-restart").addEventListener("click", () => confirmAction(
+  "结束本次火情，重新规划？", "保留所有建筑布局，当前火情进度不会计入成绩。", backToBuild,
+));
+el("title-new").addEventListener("click", () => confirmAction(
+  "开始新的规划？", "将恢复默认街区，替换此浏览器保存的布局，并清除本次会话成绩。",
+  () => {
+    dialogs.closeAll();
+    document.body.classList.remove("title-screen");
+    phase = "build";
+    history = [];
+    selectTool("break");
+    coverage = false;
+    routes = false;
+    view.coverage(false);
+    view.showRoutes(false);
+    el("coverage").setAttribute("aria-pressed", "false");
+    el("routes").setAttribute("aria-pressed", "false");
+    replaceLayout(defaultLayout(), true);
+    history = [];
+    speed = 1;
+    syncUI();
+    el("primary").focus({ preventScroll: true });
+  },
+));
+el("grid-open").addEventListener("click", () => { autoPause(); dialogs.open("grid-dialog"); });
+el("grid-close").addEventListener("click", () => dialogs.close());
+el("report-close").addEventListener("click", () => dialogs.close());
+el("review-result").addEventListener("click", () => dialogs.open("outcome"));
+el("fullscreen").addEventListener("click", async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await app.requestFullscreen();
+  } catch { toast("此环境暂不支持全屏，窗口模式仍可完整游玩。"); }
+});
+document.addEventListener("fullscreenchange", () => {
+  el("fullscreen").setAttribute("aria-label", document.fullscreenElement ? "退出全屏" : "切换全屏");
+  el("fullscreen").setAttribute("title", document.fullscreenElement ? "退出全屏" : "进入全屏");
+});
+let pendingAction: (() => void) | null = null;
+el("game-stage").insertAdjacentHTML("beforeend", `<dialog id="confirm-action" aria-labelledby="confirm-heading"><div class="eyebrow">重新规划</div><h2 id="confirm-heading"></h2><p id="confirm-description"></p><div class="outcome-actions"><button id="confirm-cancel" class="secondary">取消</button><button id="confirm-ok" class="primary">确认</button></div></dialog>`);
+function confirmAction(heading: string, description: string, action: () => void): void {
+  pendingAction = action;
+  el("confirm-heading").textContent = heading;
+  el("confirm-description").textContent = description;
+  dialogs.open("confirm-action");
+}
+el("confirm-cancel").addEventListener("click", () => { pendingAction = null; dialogs.close(); });
+el("confirm-ok").addEventListener("click", () => {
+  const action = pendingAction;
+  pendingAction = null;
+  dialogs.close();
+  action?.();
 });
 function toggleSound(): void {
   const enabled = audio.toggle();
@@ -625,8 +638,8 @@ el("sound").addEventListener("click", toggleSound);
 el("title-sound").addEventListener("click", toggleSound);
 el("outcome-edit").addEventListener("click", backToBuild);
 el("outcome-details").addEventListener("click", () => {
-  el<HTMLDialogElement>("outcome").close();
-  el("report").scrollIntoView({ behavior: "smooth", block: "start" });
+  dialogs.closeAll();
+  dialogs.open("report");
 });
 save();
 syncUI();
