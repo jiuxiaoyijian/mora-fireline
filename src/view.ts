@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { PointerGesture } from "./input/gesture.ts";
+import type { Point } from "./input/gesture.ts";
 import { RULES, buildable, distance } from "./sim/model.ts";
 import { HEX_RADIUS, hexPosition } from "./sim/hex.ts";
 import { addLandscape } from "./landscape.ts";
@@ -106,38 +108,43 @@ export class GameView {
     );
     this.hover.visible = false;
     this.scene.add(this.hover);
-    let drag: { x: number; y: number; button: number; moved: boolean; last: number } | null = null;
+    let drag: PointerGesture | null = null;
+    const point = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });
+    const applyStroke = (points: Point[]) => {
+      for (const p of points) {
+        // Captured pointers still travel over the HUD: never paint behind controls.
+        const target = document.elementFromPoint(p.x, p.y);
+        if (!target || !this.host.contains(target)) continue;
+        const i = this.pick({ clientX: p.x, clientY: p.y });
+        if (buildable(i) && drag?.visit(i)) onSelect(i);
+      }
+    };
+    const cancel = () => {
+      const id = drag?.pointerId;
+      drag = null;
+      if (id !== undefined && this.host.hasPointerCapture(id)) this.host.releasePointerCapture(id);
+    };
     this.host.addEventListener("pointerdown", (event) => {
-      if (!event.isPrimary) { drag = null; return; }
-      if (event.button !== 0 && event.button !== 2) return;
-      drag = { x: event.clientX, y: event.clientY, button: event.button, moved: false, last: this.pick(event) };
+      if (drag || !event.isPrimary || (event.button !== 0 && event.button !== 2)) return;
+      if (event.button === 0 && this.host.closest<HTMLElement>("[data-phase]")?.dataset.phase !== "build") return;
+      const mode = event.button === 2 ? "orbit" : this.host.dataset.activeTool === "break" ? "paint" : "tap";
+      drag = new PointerGesture(event.pointerId, mode, point(event));
       this.host.setPointerCapture(event.pointerId);
     });
     this.host.addEventListener("pointermove", (event) => {
+      if (!event.isPrimary || (drag && drag.pointerId !== event.pointerId)) return;
       if (drag) {
-        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-        if (Math.hypot(dx, dy) > 5) drag.moved = true;
-        if (drag.button === 2 && drag.moved) {
-          this.azimuth -= dx * 0.25;
-          this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.2, 30, 70);
-          drag.x = event.clientX; drag.y = event.clientY;
+        const movement = drag.move(event.pointerId, point(event));
+        if (movement.dx || movement.dy) {
+          this.azimuth -= movement.dx * 0.25;
+          this.pitch = THREE.MathUtils.clamp(this.pitch + movement.dy * 0.2, 30, 70);
           this.resize();
           return;
         }
-        if (drag.button === 0 && drag.moved && this.host.dataset.activeTool === "break") {
-          const next = this.pick(event);
-          if (next >= 0 && next !== drag.last) {
-            if (drag.last >= 0) onSelect(drag.last);
-            onSelect(next); drag.last = next;
-          }
-        }
+        applyStroke(movement.points);
       }
       const i = this.pick(event);
-      if (i !== this.hovered) {
-        this.hovered = i;
-        onHover(i);
-      }
-
+      if (i !== this.hovered) { this.hovered = i; onHover(i); }
       if (i >= 0) {
         const { x, z } = hexPosition(i);
         this.hover.position.set(x, 0.085, z);
@@ -150,14 +157,14 @@ export class GameView {
       onHover(-1);
     });
     this.host.addEventListener("pointerup", (event) => {
-      if (drag?.button === 0 && !drag.moved) {
-        const i = this.pick(event);
-        if (i >= 0) onSelect(i);
-      }
-      drag = null;
-      if (this.host.hasPointerCapture(event.pointerId)) this.host.releasePointerCapture(event.pointerId);
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      applyStroke(drag.end(event.pointerId, point(event)));
+      cancel();
     });
-    this.host.addEventListener("pointercancel", () => { drag = null; });
+    this.host.addEventListener("pointercancel", event => { if (drag?.pointerId === event.pointerId) cancel(); });
+    this.host.addEventListener("lostpointercapture", event => { if (drag?.pointerId === event.pointerId) drag = null; });
+    this.host.addEventListener("cancel-gesture", cancel);
+    window.addEventListener("blur", cancel);
     this.host.addEventListener("wheel", (event) => {
       event.preventDefault();
       this.adjustCamera(event.deltaY < 0 ? "in" : "out");
@@ -561,7 +568,7 @@ export class GameView {
     this.routes.visible = this.hasRoutes;
     this.renderer.render(this.scene, this.camera);
   }
-  private pick(event: MouseEvent | PointerEvent): number {
+  private pick(event: { clientX: number; clientY: number }): number {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.raycaster.setFromCamera(
       new THREE.Vector2(

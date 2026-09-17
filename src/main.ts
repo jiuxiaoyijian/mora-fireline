@@ -30,6 +30,7 @@ const dialogs = new GameDialogs(document.getElementById("game-stage")!);
 const audio = new GameAudio();
 const el = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
+el("game-stage").addEventListener("dialog-change", () => el("scene").dispatchEvent(new Event("cancel-gesture")));
 type Phase = "build" | "warning" | "running" | "paused" | "finished";
 let phase: Phase = "build";
 let warningRemaining = 2.4;
@@ -86,6 +87,7 @@ function toast(message: string): void {
   }, 3800);
 }
 function selectTool(next: Tool): void {
+  el("scene").dispatchEvent(new Event("cancel-gesture"));
   moving = -1;
   el("cancel-move").hidden = true;
   tool = next;
@@ -290,6 +292,7 @@ function updateTime(): void {
   }
 }
 function start(): void {
+  el("scene").dispatchEvent(new Event("cancel-gesture"));
   if (!canStart(layout)) {
     toast("请先安置全部 12 栋住宅。");
     return;
@@ -470,6 +473,7 @@ el("help").querySelector("form")?.addEventListener("submit", (event) => {
 document.addEventListener("keydown", (event) => {
   if (/INPUT|TEXTAREA|SELECT/.test((event.target as HTMLElement).tagName)) return;
   if (event.key === "Escape") {
+    el("scene").dispatchEvent(new Event("cancel-gesture"));
     event.preventDefault();
     if (dialogs.current) {
       if (dialogs.current === "title-screen") return;
@@ -497,6 +501,7 @@ document.addEventListener("keydown", (event) => {
     selectTool((["house", "break", "station", "erase"] as Tool[])[Number(event.key) - 1]);
 });
 function autoPause(): void {
+  el("scene").dispatchEvent(new Event("cancel-gesture"));
   if (phase === "running" || phase === "warning") {
     pausedFrom = phase;
     phase = "paused";
@@ -561,10 +566,6 @@ el("undo").addEventListener("click", undo);
 el("cancel-move").addEventListener("click", () => selectTool(tool));
 el("scene").addEventListener("contextmenu", (event) => {
   event.preventDefault();
-  if (phase === "build" && moving >= 0) {
-    selectTool(tool);
-    toast("已取消搬迁。");
-  }
 });
 el("skip-result").addEventListener("click", () => {
   if (!sim || !(phase === "running" || phase === "paused")) return;

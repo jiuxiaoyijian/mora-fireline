@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/sim/*.test.ts",
+    "test": "node --experimental-strip-types --test src/sim/*.test.ts src/input/*.test.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test:perf": "node --experimental-strip-types --test tests/performance.test.ts && node --experimental-strip-types scripts/benchmark.ts",
