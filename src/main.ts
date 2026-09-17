@@ -244,7 +244,8 @@ function updateTime(): void {
   const wind = weatherAt(level, time);
   el("wind-current").textContent = `风向 ${wind.direction === "east" ? "西 → 东" : wind.direction === "west" ? "东 → 西" : "无风"}`;
   if (!sim || phase === "finished") el("water-pressure").hidden = true;
-  if (!sim) el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 屋顶蓝水滴：可拦截 · 金色：缺压";
+  el("fire-feedback").hidden = !sim || phase === "build";
+  if (!sim) el("fire-feedback").textContent = "";
   else if (phase === "finished") el("fire-feedback").textContent = `地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次 · 水压耗尽漏防 ${sim.stats.dryHits} 次`;
   if (sim && (phase === "running" || phase === "paused")) {
     const incoming = sim.embers.map(e => `${address(e.target)} · ${((e.lands - sim!.tick) * RULES.dt).toFixed(1)}秒`).join(" / ");
@@ -600,7 +601,8 @@ function loadLevel(i: number, savePrevious = true): void {
   dialogs.closeAll(); document.body.classList.remove("title-screen");
   view.setScenario(level); view.setLayout(layout); selectTool(level.tools[0]);
   el("lesson-progress").textContent = "先读委托，观察火源，再布置防线。";
-  el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 屋顶蓝水滴：可拦截 · 金色：缺压";
+  el("fire-feedback").textContent = "";
+  el("fire-feedback").hidden = true;
   el("lesson-hint").hidden = i > 2;
   el("lesson-hint").textContent = level.hint;
   save(); syncUI(); el("primary").focus({ preventScroll: true });
