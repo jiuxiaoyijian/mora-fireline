@@ -13,7 +13,7 @@ export function advancePlayback(sim: Simulation): number | null {
   const houses = sim.cells.filter((cell) => cell.kind === "house");
   // Wait for destruction, so players still see the burning/destruction feedback.
   // Quiet periods or a lack of new ignitions do not prove that homes are safe.
-  if (houses.length !== RULES.homes || !houses.every((cell) => cell.burned))
+  if (houses.length !== (sim.scenario ? sim.scenario.layout.filter(k => k === "house").length : RULES.homes) || !houses.every((cell) => cell.burned))
     return null;
   const stoppedAt = sim.tick;
   completeSimulation(sim);

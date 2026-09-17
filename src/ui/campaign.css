@@ -1,0 +1,58 @@
+.wind-label { display:flex; flex-direction:column; gap:4px; max-width:440px; }
+.wind-label small { font-size:12px; font-weight:400; }
+.lesson-card { position:absolute; z-index:3; top:155px; left:var(--safe-left); width:260px; padding:16px 18px; border-left:3px solid #a77943; background:#fff7e8ed; border-radius:3px 12px 12px 3px; box-shadow:0 5px 20px #40352312; }
+.lesson-card strong { font-size:17px; color:#3c5749; }
+.lesson-card p { font-size:14px; line-height:1.65; margin:9px 0; }
+.lesson-card>div { display:flex; align-items:center; gap:10px; }
+.lesson-card button { min-height:44px; white-space:nowrap; padding:5px 10px; font-size:13px; }
+.lesson-card small { font-size:11px; color:#706657; }
+#lesson-hint { border-top:1px solid #cdbd9e; padding-top:10px; }
+.fire-feedback { position:absolute; z-index:3; bottom:calc(var(--safe-bottom) + 142px); left:50%; transform:translateX(-50%); border-radius:18px; background:#fff8e9e8; color:#775232; padding:7px 16px; font-size:13px; pointer-events:none; white-space:nowrap; }
+#game-stage:not([data-phase=build]) .lesson-card { display:none; }
+#game-stage:not([data-phase=build]) .fire-feedback { bottom:calc(var(--safe-bottom) + 90px); }
+#level-select { width:min(660px,calc(100% - 28px)); }
+#level-list { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:22px; }
+.level-choice { display:grid; grid-template-columns:34px 1fr; text-align:left; gap:4px 10px; padding:14px; min-height:80px; }
+.level-choice>span { grid-row:span 2; font-family:Georgia,serif; font-size:27px; color:#a6753b; align-self:center; }
+.level-choice small { color:#7a6c51; }
+.level-choice.current { outline:2px solid #638575; outline-offset:2px; }
+.level-choice:disabled { opacity:.48; }
+.outcome-actions { flex-wrap:wrap; }
+#next-level { width:100%; }
+@media(max-width:1050px) {
+  .lesson-card { top:135px; width:205px; padding:10px 12px; }
+  .lesson-card p { font-size:12px; margin:6px 0; }
+  .lesson-card strong { font-size:14px; }
+  .lesson-card small { display:none; }
+}
+@media(max-height:540px) and (min-width:681px) {
+  .lesson-card { top:116px; width:195px; max-height:140px; overflow:auto; }
+  .lesson-card>p:not(#lesson-hint) { display:none; }
+  .wind-label { top:74px; }
+  .fire-feedback { bottom:100px; font-size:11px; }
+}
+@media(max-width:680px) {
+  .wind-label { max-width:calc(100% - 36px); font-size:12px; }
+  .wind-label small { font-size:10px; }
+  .lesson-card { top:139px; width:calc(100% - 36px); max-height:154px; overflow:auto; padding:10px 12px; }
+  .lesson-card>p:not(#lesson-hint) { display:none; }
+  .lesson-card>div { display:inline-flex; float:right; margin-top:-8px; }
+  .lesson-card>strong { display:inline-block; padding:5px 0; }
+  #lesson-hint { clear:both; }
+  .fire-feedback { bottom:calc(var(--safe-bottom) + 198px); font-size:10px; padding:6px 10px; max-width:95%; white-space:normal; text-align:center; }
+  #game-stage:not([data-phase=build]) .fire-feedback { bottom:calc(var(--safe-bottom) + 100px); }
+  #level-list { gap:8px; }
+  .level-choice { padding:10px; grid-template-columns:23px 1fr; font-size:13px; }
+  .level-choice>span { font-size:21px; }
+}
+/* Pausing preserves a clear view of the map for reading threat feedback. */
+#pause-overlay { top:175px; left:var(--safe-left); transform:none; width:220px; padding:16px; border-width:1px; text-align:left; }
+#pause-overlay>span { font-size:18px; }
+#pause-overlay>small { font-size:12px; }
+#pause-overlay>button { margin-top:12px; font-size:14px; padding:8px 14px; min-height:44px; }
+@media(max-width:680px) { #pause-overlay { top:155px; width:180px; padding:12px; } }
+@media(max-height:540px) and (min-width:681px) { #pause-overlay { top:155px; width:180px; padding:12px; } }
+@media(max-width:1050px) {
+  #game-stage[data-phase=build] .fire-feedback { display:none; }
+  #game-stage:not([data-phase=build]) .fire-feedback { bottom:calc(var(--safe-bottom) + 150px); }
+}

@@ -2,6 +2,15 @@ import { hexDistance, hexNeighbors } from "./hex.ts";
 export type Kind = "grass" | "house" | "break" | "station" | "stone" | "source";
 export type Tool = "house" | "break" | "station" | "erase";
 export type Layout = Kind[];
+export type HouseType = "timber" | "brick";
+export interface Weather { at: number; direction: "east" | "west" | "calm"; strength: number }
+export interface Scenario {
+  layout: Layout; budget: number; goal: number; duration: number;
+  tools: readonly Tool[]; houseTypes: Record<number, HouseType>;
+  weather: readonly Weather[]; emberInterval: number; seed: number;
+  sourceStarts?: Record<number, number>;
+}
+export interface Ember { source: number; target: number; launched: number; lands: number }
 export interface Cell {
   kind: Kind;
   heat: number;
@@ -10,18 +19,26 @@ export interface Cell {
   burning: boolean;
   burned: boolean;
   fuel: number;
+  threshold: number;
+  wet: boolean;
 }
 export interface FireEvent {
   tick: number;
   target: number;
   source: number;
-  type: "ignite" | "destroy";
+  type: "ignite" | "destroy" | "block" | "ember-warning" | "ember-block" | "ember-hit";
+  cause?: "ground" | "ember";
 }
 export interface Simulation {
   cells: Cell[];
   tick: number;
   events: FireEvent[];
   done: boolean;
+  scenario?: Scenario;
+  embers: Ember[];
+  blocked: Set<string>;
+  stats: { barriers: number; intercepted: number; emberHits: number };
+  threats: { source: number; target: number; blocked: boolean }[];
 }
 export interface Result {
   saved: number;
@@ -116,7 +133,12 @@ export function editLayout(
   layout: Layout,
   i: number,
   tool: Tool,
+  scenario?: Scenario,
 ): { layout: Layout; error?: string } {
+  if (scenario && (!scenario.tools.includes(tool) || tool === "house"))
+    return { layout, error: "本关未开放此工具；住宅由关卡固定。" };
+  if (scenario && scenario.layout[i] !== "grass")
+    return { layout, error: scenario.layout[i] === "house" ? "住宅是固定保护目标，不能移动、替换或拆除。" : "固定岩地与火源不可改建。" };
   if (!buildable(i))
     return { layout, error: "天然岩地、边界和火源不可建造。请选择草地。" };
   const kind = tool === "erase" ? "grass" : tool;
@@ -126,22 +148,34 @@ export function editLayout(
   const n = counts(next);
   if (n.homes > RULES.homes)
     return { layout, error: "12 栋住宅已放完。先拆除一栋，再选择新位置。" };
-  if (n.spent > RULES.budget)
+  if (n.spent > (scenario?.budget ?? RULES.budget))
     return { layout, error: "防灾预算不足。拆除设施可以退还预算。" };
   return { layout: next };
 }
-export function canStart(layout: Layout): boolean {
+export function canStart(layout: Layout, scenario?: Scenario): boolean {
+  if (scenario) return validateScenarioLayout(layout, scenario);
   return validateLayout(layout) && counts(layout).homes === RULES.homes;
 }
-export function createSimulation(layout: Layout): Simulation {
+export function validateScenarioLayout(value: unknown, scenario: Scenario): value is Layout {
+  if (!Array.isArray(value) || value.length !== 64) return false;
+  return value.every((kind, i) => scenario.layout[i] === "grass" && buildable(i)
+    ? ["grass", ...(scenario.tools.includes("break") ? ["break"] : []), ...(scenario.tools.includes("station") ? ["station"] : [])].includes(kind)
+    : kind === scenario.layout[i]) && counts(value).spent <= scenario.budget;
+}
+export function weatherAt(scenario: Scenario | undefined, seconds: number): Weather {
+  return scenario?.weather.filter(w => w.at <= seconds).at(-1) ?? { at: 0, direction: "east", strength: 1 };
+}
+export function createSimulation(layout: Layout, scenario?: Scenario): Simulation {
   return {
-    cells: layout.map((kind) => ({
+    cells: layout.map((kind, i) => ({
       kind,
       heat: 0,
       cooling: 0,
       hp: kind === "house" ? 100 : 0,
-      burning: kind === "source",
+      burning: kind === "source" && !(scenario?.sourceStarts?.[i]),
       burned: false,
+      threshold: kind === "house" ? (scenario?.houseTypes[i] === "timber" ? 40 : scenario?.houseTypes[i] === "brick" ? 90 : RULES.houseThreshold) : RULES.grassThreshold,
+      wet: false,
       fuel:
         kind === "house"
           ? RULES.houseFuel
@@ -152,6 +186,7 @@ export function createSimulation(layout: Layout): Simulation {
     tick: 0,
     events: [],
     done: false,
+    scenario, embers: [], blocked: new Set(), stats: { barriers: 0, intercepted: 0, emberHits: 0 }, threats: [],
   };
 }
 function flammable(cell: Cell) {
@@ -160,6 +195,13 @@ function flammable(cell: Cell) {
 export const neighbors = hexNeighbors;
 export function step(sim: Simulation): void {
   if (sim.done) return;
+  const tick = sim.tick + 1;
+  const weather = weatherAt(sim.scenario, sim.tick * RULES.dt);
+  sim.threats = [];
+  sim.cells.forEach((cell, i) => {
+    if (cell.kind === "source" && sim.tick * RULES.dt >= (sim.scenario?.sourceStarts?.[i] ?? 0)) cell.burning = true;
+    cell.wet = cell.kind === "house" && sim.cells.some((other, j) => other.kind === "station" && distance(i, j) <= RULES.stationRadius);
+  });
   const incoming = new Float64Array(64);
   const strongest = new Float64Array(64);
   const source = new Int16Array(64).fill(-1);
@@ -167,13 +209,20 @@ export function step(sim: Simulation): void {
   for (let i = 0; i < 64; i++) {
     if (!sim.cells[i].burning) continue;
     for (const j of neighbors(i)) {
+      if (sim.cells[j].kind === "break") {
+        sim.threats.push({ source: i, target: j, blocked: true });
+        const key = `${i}:${j}`;
+        if (!sim.blocked.has(key)) { sim.blocked.add(key); sim.stats.barriers++; sim.events.push({ tick, source: i, target: j, type: "block" }); }
+      }
       if (!flammable(sim.cells[j]) || sim.cells[j].burning) continue;
-      const rate =
-        j === i + 1
-          ? RULES.eastHeat
-          : j === i - 1
-            ? RULES.westHeat
-            : RULES.sideHeat;
+      sim.threats.push({ source: i, target: j, blocked: false });
+      const east = coords(j).x > coords(i).x;
+      const west = coords(j).x < coords(i).x;
+      const downwind = weather.direction === "east" ? east : weather.direction === "west" && west;
+      const upwind = weather.direction === "east" ? west : weather.direction === "west" && east;
+      const rate = sim.scenario
+        ? (downwind ? 22 * weather.strength : upwind ? 6 : 12)
+        : j === i + 1 ? RULES.eastHeat : j === i - 1 ? RULES.westHeat : RULES.sideHeat;
       incoming[j] += rate;
       if (rate > strongest[j]) {
         strongest[j] = rate;
@@ -194,7 +243,33 @@ export function step(sim: Simulation): void {
     for (const j of targets)
       cooling[j] += RULES.stationCapacity / targets.length;
   }
-  const tick = sim.tick + 1;
+  // Seeded, telegraphed embers: retries use the same weather and selection sequence.
+  const interval = sim.scenario?.emberInterval ?? 0;
+  if (interval > 0 && weather.direction !== "calm" && tick % Math.round(interval / RULES.dt) === 0) {
+    const candidates: { source: number; target: number }[] = [];
+    sim.cells.forEach((cell, i) => {
+      if (!cell.burning) return;
+      sim.cells.forEach((target, j) => {
+        const dx = coords(j).x - coords(i).x;
+        if (target.kind === "house" && !target.burning && !target.burned && distance(i,j) >= 2 && distance(i,j) <= 3
+          && (weather.direction === "east" ? dx > 0 : dx < 0)) candidates.push({ source:i, target:j });
+      });
+    });
+    if (candidates.length) {
+      const hash = Math.imul((sim.scenario!.seed ^ tick) >>> 0, 1664525) + 1013904223;
+      const selected = candidates[(hash >>> 0) % candidates.length];
+      sim.embers.push({ ...selected, launched:tick, lands:tick + 15 });
+      sim.events.push({ ...selected, tick, type:"ember-warning" });
+    }
+  }
+  const emberSources = new Map<number, number>();
+  for (const ember of sim.embers.filter(e => e.lands <= tick)) {
+    const cell = sim.cells[ember.target];
+    if (cell.burning || cell.burned) continue;
+    if (cell.wet) { sim.stats.intercepted++; sim.events.push({ ...ember, tick, type:"ember-block" }); }
+    else { cell.heat += 65; emberSources.set(ember.target, ember.source); sim.stats.emberHits++; sim.events.push({ ...ember, tick, type:"ember-hit" }); }
+  }
+  sim.embers = sim.embers.filter(e => e.lands > tick);
   sim.cells.forEach((cell, i) => {
     cell.cooling = cooling[i];
     if (cell.burning && cell.kind !== "source") {
@@ -212,16 +287,15 @@ export function step(sim: Simulation): void {
         0,
         cell.heat + (incoming[i] - RULES.cooling - cooling[i]) * RULES.dt,
       );
-      const threshold =
-        cell.kind === "house" ? RULES.houseThreshold : RULES.grassThreshold;
+      const threshold = cell.threshold;
       if (cell.heat >= threshold) {
         cell.burning = true;
-        sim.events.push({ tick, target: i, source: source[i], type: "ignite" });
+        sim.events.push({ tick, target: i, source: emberSources.get(i) ?? source[i], type: "ignite", ...(sim.scenario ? { cause: emberSources.has(i) ? "ember" as const : "ground" as const } : {}) });
       }
     }
   });
   sim.tick = tick;
-  sim.done = tick >= RULES.steps;
+  sim.done = tick >= (sim.scenario ? Math.round(sim.scenario.duration / RULES.dt) : RULES.steps);
 }
 export function result(sim: Simulation): Result {
   const houses = sim.cells.filter((c) => c.kind === "house");
@@ -232,11 +306,11 @@ export function result(sim: Simulation): Result {
     saved,
     destroyed,
     burning,
-    success: houses.length === RULES.homes && saved >= RULES.goal,
+    success: houses.length === (sim.scenario ? counts(sim.scenario.layout).homes : RULES.homes) && saved >= (sim.scenario?.goal ?? RULES.goal),
   };
 }
-export function runToEnd(layout: Layout): Simulation {
-  const sim = createSimulation(layout);
+export function runToEnd(layout: Layout, scenario?: Scenario): Simulation {
+  const sim = createSimulation(layout, scenario);
   while (!sim.done) step(sim);
   return sim;
 }

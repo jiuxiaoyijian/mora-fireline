@@ -1,0 +1,78 @@
+/* The title is a landscape cover, while in-game dialogs keep their paper frames. */
+.title-screen #scene { left:24%; right:-8%; }
+.title-screen #modal-shade {
+  background:linear-gradient(90deg,#f6edda 0%,#f6edda 27%,#f6eddaed 34%,#f6edda88 43%,#f6edda00 61%);
+}
+#title-screen {
+  left:6%; top:50%; transform:translateY(-50%); width:35%; max-width:480px;
+  max-height:calc(100% - 48px); padding:8px 0; margin:0;
+  border:0; outline:0; border-radius:0; background:transparent; box-shadow:none;
+  color:#314b3c; text-align:left; scrollbar-width:thin;
+}
+.title-brand { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.patrol-emblem { width:48px; height:48px; color:#8f693d; }
+.title-brand>span { font-size:14px; letter-spacing:3px; }
+.title-brand small { display:block; font:9px/2.2 Georgia,serif; letter-spacing:2px; color:#8e795b; }
+.title-kicker { display:flex; align-items:center; gap:12px; color:#92724e; font-size:11px; letter-spacing:2px; }
+.title-kicker i { width:42px; height:1px; background:#b69c70; }
+#title-screen h2 { font-family:"STKaiti","KaiTi","Noto Serif CJK SC","Songti SC",serif; font-size:clamp(58px,6.6vw,108px); line-height:1.2; letter-spacing:.03em; font-weight:900; margin:13px 0 6px; white-space:nowrap; }
+#title-screen h2 span { color:#a6613c; }
+.title-english { font:14px/1.5 Georgia,serif; letter-spacing:8px; color:#856c4b; }
+#title-screen .title-tagline { font-size:21px; line-height:1.65; font-weight:600; letter-spacing:2px; margin:24px 0 10px; }
+#title-screen .title-story { font-size:14px; color:#736b57; line-height:1.8; margin:0 0 26px; }
+#title-screen .title-actions { display:grid; grid-template-columns:1fr auto; gap:10px; max-width:350px; }
+#title-screen #enter-town {
+  grid-column:1/-1; position:relative; width:100%; min-height:58px; padding:14px 23px;
+  text-align:left; font-size:18px; letter-spacing:2px; background:#365742; border-color:#365742;
+  border-radius:3px 14px 3px 3px; box-shadow:0 4px 0 #263e30,0 9px 22px #314b3c18;
+}
+#title-screen #enter-town:hover { background:#456b50; transform:translateX(3px); }
+#title-screen #enter-town:focus-visible { outline:2px solid #8e734a; outline-offset:5px; }
+#title-screen .title-secondary { background:transparent; border:0; box-shadow:none; border-radius:0; padding:8px 0; text-align:left; font-size:14px; color:#675c46; justify-self:start; }
+#title-screen .title-secondary:before { content:'↺'; margin-right:8px; }
+#title-screen #continue-note { grid-column:1/-1; font-size:11px; color:#766d58; line-height:1.5; }
+.title-utilities { display:flex; align-items:center; gap:12px; margin-top:14px; }
+.title-utilities button { background:transparent; border:0; box-shadow:none; padding:7px 0; font-size:13px; color:#665e4c; }
+.title-utilities>span { color:#baaa8b; font-size:12px; }
+.title-colophon { border-top:1px solid #b4a07a66; padding-top:14px; margin-top:12px; display:flex; justify-content:space-between; gap:12px; font-size:10px; letter-spacing:1px; color:#80765f; max-width:350px; }
+.title-scene-label { display:none; }
+.title-screen .title-scene-label { display:flex; position:absolute; z-index:50; right:5%; bottom:6%; flex-direction:column; gap:9px; color:#324d40; pointer-events:none; padding:12px 18px; border-left:2px solid #92764d; background:linear-gradient(90deg,#fff2dbaa,#fff2db00); }
+.title-scene-label>span { font-size:11px; letter-spacing:3px; }.title-scene-label strong { font:600 19px/1.5 "KaiTi",serif; letter-spacing:2px; }.title-scene-label small { font-size:11px; color:#52614c; }
+.title-screen:has(#help[open],#confirm-action[open]) .title-scene-label { visibility:hidden; }
+@media(min-width:1000px) and (min-height:650px) {
+  #title-screen { animation:cover-arrive .65s ease-out both; }
+  @keyframes cover-arrive { from { opacity:0; translate:0 12px; } to { opacity:1; translate:0 0; } }
+}
+@media(max-height:680px) and (min-width:601px) {
+  #title-screen { left:5%; width:39%; max-height:calc(100% - 28px); }
+  .title-brand { margin-bottom:16px; }.patrol-emblem { width:36px; height:36px; }
+  #title-screen h2 { font-size:clamp(48px,7vw,76px); margin:7px 0; }
+  #title-screen .title-tagline { font-size:17px; margin:14px 0 12px; }
+  #title-screen .title-story { display:none; }.title-colophon { display:none; }
+  #title-screen .title-actions { gap:6px; }.title-utilities { margin-top:4px; }
+}
+@media(max-height:440px) and (min-width:601px) {
+  #title-screen { top:12px; transform:none; padding:0; max-height:calc(100% - 24px); }
+  .title-brand { margin-bottom:10px; }.title-brand small,.title-kicker,.title-english { display:none; }
+  #title-screen h2 { font-size:48px; margin:5px 0; }
+  #title-screen .title-tagline { font-size:15px; line-height:1.5; margin:9px 0 14px; }
+  #title-screen .title-tagline br { display:none; }
+  #title-screen #enter-town { min-height:48px; padding:10px 16px; font-size:16px; }
+  #title-screen .title-actions { grid-template-columns:1fr; gap:0; }
+  #title-screen .title-secondary { min-height:48px; }
+  #title-screen #continue-note { font-size:10px; }.title-utilities { position:absolute; right:0; bottom:24px; gap:8px; }.title-utilities button { font-size:12px; }
+  .title-screen .title-scene-label { bottom:5%; right:3%; }.title-scene-label strong { font-size:15px; }.title-scene-label small { display:none; }
+}
+@media(max-width:600px) {
+  .title-screen #scene { left:0; right:0; top:-5%; bottom:39%; }
+  .title-screen #modal-shade { background:linear-gradient(0deg,#f6edda 0%,#f6edda 42%,#f6eddaee 49%,#f6edda00 65%); }
+  #title-screen { left:7%; top:auto; bottom:max(16px,env(safe-area-inset-bottom)); transform:none; width:86%; max-width:none; max-height:59%; padding:0; }
+  .title-brand { margin-bottom:10px; }.patrol-emblem { width:32px; height:32px; }.title-brand>span { font-size:12px; }.title-brand small { display:none; }
+  .title-kicker { display:none; }#title-screen h2 { font-size:54px; margin:4px 0; }.title-english { font-size:10px; letter-spacing:5px; }
+  #title-screen .title-tagline { font-size:17px; margin:15px 0; }#title-screen .title-tagline br { display:none; }#title-screen .title-story { display:none; }
+  #title-screen .title-actions { max-width:none; gap:4px; }#title-screen #enter-town { min-height:54px; }.title-utilities { position:absolute; right:0; bottom:39px; margin:0; }.title-utilities button { font-size:12px; }
+  .title-colophon { max-width:none; margin-top:10px; padding-top:10px; }.title-screen .title-scene-label { display:none; }
+}
+@media(prefers-reduced-motion:reduce) { #title-screen { animation:none; } }
+
+#title-screen #enter-town::after { content:"→"; position:absolute; right:22px; font-size:23px; font-weight:400; line-height:1; }

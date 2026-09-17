@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { FireFeedback } from "./fire-feedback.ts";
 import { PointerGesture } from "./input/gesture.ts";
 import type { Point } from "./input/gesture.ts";
 import { RULES, buildable, distance } from "./sim/model.ts";
@@ -6,10 +7,12 @@ import { HEX_RADIUS, hexPosition } from "./sim/hex.ts";
 import { addLandscape } from "./landscape.ts";
 import { addWaterscape } from "./waterscape.ts";
 import { performanceRecorder } from "./performance.ts";
-import type { Layout, Simulation, Tool } from "./sim/model.ts";
+import type { Layout, Simulation, Tool, Scenario } from "./sim/model.ts";
 
 type SelectHandler = (index: number) => void;
 export class GameView {
+  private scenario?: Scenario;
+  private fireFeedback = new FireFeedback();
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 160);
   private zoomLevel = 1;
@@ -85,7 +88,7 @@ export class GameView {
     this.scene.add(sun);
     addLandscape(this.scene);
     this.animateWater = addWaterscape(this.scene);
-    this.scene.add(this.board, this.routes, this.guides, this.ghost);
+    this.scene.add(this.board, this.routes, this.guides, this.ghost, this.fireFeedback.group);
     this.guides.visible = false;
     for (let i = 0; i < 64; i++) {
       const p = hexPosition(i);
@@ -218,6 +221,11 @@ export class GameView {
       }
     });
   }
+  setScenario(scenario: Scenario): void {
+    this.scenario = scenario;
+    this.layout = []; // Same kind can have different house material in the next level.
+  }
+  feedback(i: number, valid: boolean): void { this.fireFeedback.click(i, valid); }
   setLayout(layout: Layout): void {
     const started = performance.now();
     const oldLayout = this.layout;
@@ -229,6 +237,7 @@ export class GameView {
     this.hover.visible = false;
     this.ghost.visible = false;
     this.clearRoutes();
+    this.fireFeedback?.update(null);
     layout.forEach((kind, i) => {
       if (!reset && oldLayout[i] === kind) return;
       if (this.groups[i]) {
@@ -254,7 +263,7 @@ export class GameView {
       let body: THREE.Mesh | null = null;
       let spray: THREE.Group | null = null;
       if (kind === "house") {
-        body = this.box(0.65, 0.52, 0.61, "#f5e4c5");
+        body = this.box(0.65, 0.52, 0.61, this.scenario?.houseTypes[i] === "brick" ? "#b5b9b4" : "#f5e4c5");
         body.position.y = 0.31;
         group.add(body);
         const foundation = this.box(0.72, 0.12, 0.68, "#9b9d8e");
@@ -274,7 +283,7 @@ export class GameView {
         const roof = new THREE.Mesh(
           new THREE.CylinderGeometry(0, 0.52, 0.34, 4),
           new THREE.MeshStandardMaterial({
-            color: ["#a9583c", "#677b70", "#b38a50", "#9e5547"][i % 4],
+            color: this.scenario ? (this.scenario.houseTypes[i] === "brick" ? "#546b7e" : "#ac6241") : ["#a9583c", "#677b70", "#b38a50", "#9e5547"][i % 4],
             roughness: 0.9,
           }),
         );
@@ -382,7 +391,7 @@ export class GameView {
         flame.add(cone);
       }
       flame.position.y = kind === "house" ? 0.32 : 0;
-      flame.visible = kind === "source";
+      flame.visible = kind === "source" && !this.scenario?.sourceStarts?.[i];
       group.add(flame);
       const halo = new THREE.Mesh(
         new THREE.CircleGeometry(HEX_RADIUS * 0.96, 6, Math.PI / 6),
@@ -475,6 +484,8 @@ export class GameView {
     this.clock += elapsed;
     this.animateWater(this.reducedMotion ? 0 : this.clock);
     const stateChanged = sim !== this.lastSimulation || (sim?.tick ?? -1) !== this.lastTick;
+    if (stateChanged) this.fireFeedback?.update(sim);
+    this.fireFeedback?.animate(elapsed, this.reducedMotion);
     this.lastSimulation = sim;
     this.lastTick = sim?.tick ?? -1;
     if (sim)
@@ -486,7 +497,7 @@ export class GameView {
         }
         this.flames[i].visible = cell.burning;
         this.water[i].visible =
-          !sim.done && cell.cooling > 0 && !cell.burning && !cell.burned;
+          !sim.done && (cell.cooling > 0 || cell.wet) && !cell.burning && !cell.burned;
         const pulse = this.reducedMotion
           ? 1
           : 0.92 + Math.sin(this.clock * 5 + i) * 0.08;
@@ -500,11 +511,11 @@ export class GameView {
             this.renderer.shadowMap.needsUpdate = true;
           }
           const material = body.material as THREE.MeshStandardMaterial;
-          material.color.set(cell.burned ? "#514f44" : "#f5e4c5");
+          material.color.set(cell.burned ? "#514f44" : this.scenario?.houseTypes[i] === "brick" ? "#b5b9b4" : "#f5e4c5");
           if (!cell.burned)
             material.color.lerp(
               this.heatColor,
-              Math.min(0.85, cell.heat / 75),
+              Math.min(0.85, cell.heat / cell.threshold),
             );
           this.groups[i].traverse((child) => {
             if (child.userData.window && child instanceof THREE.Mesh) {

@@ -6,6 +6,9 @@ import { addLandscape } from "../src/landscape.ts";
 import { defaultLayout, editLayout, index, createSimulation } from "../src/sim/model.ts";
 import { summarize } from "../src/performance.ts";
 import { addWaterscape, shoreline, riverCenter } from "../src/waterscape.ts";
+import { FireFeedback } from "../src/fire-feedback.ts";
+import { LEVELS } from "../src/sim/levels.ts";
+import { step } from "../src/sim/model.ts";
 
 // Exercise real scene construction without a WebGL context. FPS is tested in browser.
 function sceneHarness() {
@@ -74,4 +77,25 @@ test("water animation retains one unified mesh and fixed geometry across 600 fra
   meshes.forEach((mesh, i) => assert.equal(mesh.geometry, geometry[i]));
   assert.ok(8 > shoreline(riverCenter(8)), "river mouth must overlap the sea");
   for (let x = -4.5; x <= 4.5; x += .5) assert.ok(shoreline(x) > 4, "sea must stay outside playable hexes");
+});
+
+test("campaign threat and ember feedback reuses bounded geometry over repeated complete runs", () => {
+  const feedback = new FireFeedback();
+  const positions = feedback.geometry.getAttribute("position");
+  const colors = feedback.geometry.getAttribute("color");
+  let visible = false;
+  for (let run = 0; run < 3; run++) {
+    const sim = createSimulation(LEVELS[7].layout, LEVELS[7]);
+    while (!sim.done) {
+      step(sim); feedback.update(sim); feedback.animate(.1, false);
+      visible ||= feedback.geometry.drawRange.count > 0;
+      assert.equal(feedback.geometry.getAttribute("position"), positions);
+      assert.equal(feedback.geometry.getAttribute("color"), colors);
+      assert.ok(feedback.geometry.drawRange.count <= positions.count);
+      assert.equal(feedback.group.children.length, 2);
+    }
+  }
+  assert.equal(visible, true);
+  feedback.update(null);
+  assert.equal(feedback.geometry.drawRange.count, 0);
 });
