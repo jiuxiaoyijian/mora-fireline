@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LEVELS, awardStars, newCampaign, readCampaign } from "./levels.ts";
+import { LEVELS, awardStars, newCampaign, readCampaign, migrateCampaign } from "./levels.ts";
 import { canStart, counts, createSimulation, distance, editLayout, result, runToEnd, step, validateScenarioLayout, weatherAt } from "./model.ts";
 import { completeSimulation } from "./playback.ts";
 
 // Verified solutions, intentionally kept out of the runtime level data.
-const plans = [["C2"], ["B2", "B3"], ["B2s"], ["D2", "D3s"], ["D2", "D3s", "B5", "B6", "B7"], ["D2", "D3s", "G5", "G6", "G7"], ["D2s", "D5s"], ["D2", "D3s", "E5", "E6s"]];
+const plans = [["C2"], ["B2", "B3"], ["B2s"], ["E2s", "D3"], ["D2", "E2s", "C5", "C6"], ["E2s", "D3", "D5s", "F5"], ["E2s", "D3", "E6s", "D7"], ["E2s", "D3", "D5s", "F5"]];
 function plan(stage: number, actions = plans[stage]) {
   const level = LEVELS[stage];
   let map = level.layout.slice();
@@ -57,14 +57,14 @@ test("brick roofs tolerate an isolated ember that ignites timber; sprinklers do 
   const map = plan(3, ["D2", "D3"]);
   const timber = createSimulation(map, level);
   const brick = createSimulation(map, { ...level, houseTypes: Object.fromEntries(Object.keys(level.houseTypes).map(i => [i, "brick"])) });
-  for (let i=0;i<55;i++) { step(timber); step(brick); }
+  for (let i=0;i<75;i++) { step(timber); step(brick); }
   assert.ok(timber.cells.some(c => c.kind === "house" && c.burning));
   assert.ok(brick.cells.every(c => !c.burning || c.kind === "source"));
   const protectedSim = createSimulation(plan(3), level);
-  protectedSim.cells[12].burning = true;
+  protectedSim.cells[13].burning = true;
   step(protectedSim);
-  assert.equal(protectedSim.cells[12].burning, true);
-  assert.equal(protectedSim.cells[12].hp, 99);
+  assert.equal(protectedSim.cells[13].burning, true);
+  assert.equal(protectedSim.cells[13].hp, 99);
 });
 test("wind phase and delayed fire source activate at the forecast time", () => {
   const level = LEVELS[5];
@@ -86,7 +86,7 @@ test("campaign persistence restores valid per-level defenses and derives unlocks
   const read = readCampaign(JSON.parse(JSON.stringify(save)));
   assert.equal(read.current, 3); assert.equal(read.unlocked, 3); assert.deepEqual(read.layouts["4"], plan(3));
   assert.equal(readCampaign({ unlocked: 7, current: 7, stars: [4, -1, "3"] }).unlocked, 0);
-  const tampered = plan(3); tampered[12] = "grass";
+  const tampered = plan(3); tampered[13] = "grass";
   assert.deepEqual(readCampaign({ layouts: { "4": tampered } }).layouts, {});
   assert.equal(awardStars(0, 0, LEVELS[0]), 0);
   assert.equal(awardStars(2, 2, LEVELS[0]), 2);
@@ -94,11 +94,64 @@ test("campaign persistence restores valid per-level defenses and derives unlocks
 });
 
 test("every campaign star target is achievable, and partial late-level protection can unlock the next level", () => {
-  const efficient = [["C2"], ["B2", "B3"], ["B2s"], ["D3s"], ["D3s", "B5", "B6", "B7"], ["D3s", "G5", "G6", "G7"], ["D2s", "D5s"], ["D3s", "E6s"]];
+  const efficient = [["C2"], ["B2", "B3"], ["B2s"], ["E2s"], ["D2", "E2s", "C5", "C6"], ["E2s", "D3", "D5s", "F5"], ["E2s", "D6", "E6s"], ["D2", "D3", "F5s", "G6"]];
   LEVELS.forEach((level, i) => {
     const map = plan(i, efficient[i]);
     assert.equal(awardStars(result(runToEnd(map, level)).saved, counts(map).spent, level), 3, level.name);
   });
   assert.equal(awardStars(8, 8, LEVELS[4]), 1);
   assert.equal(awardStars(7, 8, LEVELS[4]), 0);
+});
+
+
+test("local sprinklers share two interception charges across houses and refill one after four seconds", () => {
+  const level = { ...LEVELS[3], emberInterval: 0 };
+  const map = plan(3, ["E2s"]);
+  const sim = createSimulation(map, level);
+  sim.embers = [13,20,21].map(target => ({ source:10, target, launched:-14, lands:1 }));
+  step(sim);
+  assert.equal(sim.stats.intercepted, 2);
+  assert.equal(sim.stats.dryHits, 1);
+  assert.equal(sim.cells[21].burning, true);
+  assert.equal(sim.supplies[0].charges, 0);
+  for (let i=0;i<39;i++) step(sim);
+  assert.equal(sim.supplies[0].charges, 0);
+  step(sim);
+  assert.equal(sim.supplies[0].charges, 1);
+  assert.ok(!sim.supplies[0].covered.includes(14), "two-step houses must not receive roof immunity");
+});
+
+test("late volleys overload sprinkler-only plans; cutting ember-producing grass restores full protection", () => {
+  const stage = LEVELS[6];
+  const sprinklerOnly = runToEnd(plan(6, ["E2s", "E6s"]), stage);
+  assert.equal(result(sprinklerOnly).success, false);
+  assert.ok(sprinklerOnly.stats.dryHits > 0);
+  const combined = runToEnd(plan(6), stage);
+  assert.equal(result(combined).saved, 8);
+  assert.equal(combined.stats.dryHits, 0);
+  assert.equal(combined.events.filter(e => e.type === "ember-warning" && stage.layout[e.source] === "grass").length, 0);
+  assert.ok(sprinklerOnly.events.some(e => e.type === "ember-warning" && stage.layout[e.source] === "grass"));
+});
+
+test("a volley selects distinct burning sources and targets and remains deterministic", () => {
+  const stage = LEVELS[7], sim = runToEnd(stage.layout, stage);
+  for (const tick of new Set(sim.events.filter(e => e.type === "ember-warning").map(e => e.tick))) {
+    const events = sim.events.filter(e => e.type === "ember-warning" && e.tick === tick);
+    assert.equal(new Set(events.map(e => e.source)).size, events.length);
+    assert.equal(new Set(events.map(e => e.target)).size, events.length);
+    assert.ok(events.length <= 3);
+  }
+  assert.deepEqual(sim, runToEnd(stage.layout, stage));
+});
+
+
+test("balance revision retains earned unlocks without copying incompatible layouts or old stars", () => {
+  const legacy = { ...newCampaign(), current:6, stars:[3,3,2,2,2,3,0,0], layouts:{ "4": plan(3) } };
+  const migrated = migrateCampaign(legacy);
+  assert.equal(migrated.unlocked,6); assert.equal(migrated.current,6);
+  assert.deepEqual(migrated.stars,[0,0,0,0,0,0,0,0]); assert.deepEqual(migrated.layouts,{});
+  assert.equal(readCampaign(JSON.parse(JSON.stringify(migrated))).unlocked,6);
+  migrated.stars[6] = 2;
+  assert.equal(readCampaign(migrated).unlocked,7);
+  assert.equal(legacy.stars[0],3);
 });

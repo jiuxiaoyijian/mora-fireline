@@ -6,6 +6,7 @@ import { addLandscape } from "../src/landscape.ts";
 import { defaultLayout, editLayout, index, createSimulation } from "../src/sim/model.ts";
 import { summarize } from "../src/performance.ts";
 import { addWaterscape, shoreline, riverCenter } from "../src/waterscape.ts";
+import { updateRenderSize } from "../src/render-size.ts";
 import { FireFeedback } from "../src/fire-feedback.ts";
 import { LEVELS } from "../src/sim/levels.ts";
 import { step } from "../src/sim/model.ts";
@@ -38,13 +39,16 @@ test("five construction edits preserve untouched scene objects and release repla
   assert.ok(groups.every((group, i) => group === before[i]), "unchanged build layout must allocate no new cell models");
 });
 
-test("leaving a simulation resets all cell models, even with unchanged layout", () => {
+test("leaving a simulation restores state without reallocating unchanged models", () => {
   const { view, groups } = sceneHarness();
   const layout = defaultLayout(); view.setLayout(layout);
   const before = groups.slice();
+  const tile = groups[11].children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+  tile.material.color.set("#000000");
   Object.assign(view, { lastSimulation: createSimulation(layout) });
   view.setLayout(layout);
-  assert.equal(groups.filter((group, i) => group !== before[i]).length, 64);
+  assert.equal(groups.filter((group, i) => group !== before[i]).length, 0);
+  assert.equal(tile.material.color.getHexString(), "9eae78");
 });
 
 test("distant landscape stays within 24 static render batches", () => {
@@ -81,6 +85,9 @@ test("water animation retains one unified mesh and fixed geometry across 600 fra
 
 test("campaign threat and ember feedback reuses bounded geometry over repeated complete runs", () => {
   const feedback = new FireFeedback();
+  const pool = feedback.group.children[2] as THREE.InstancedMesh;
+  const instances = pool.instanceMatrix;
+  const markerGeometry = pool.geometry;
   const positions = feedback.geometry.getAttribute("position");
   const colors = feedback.geometry.getAttribute("color");
   let visible = false;
@@ -92,10 +99,52 @@ test("campaign threat and ember feedback reuses bounded geometry over repeated c
       assert.equal(feedback.geometry.getAttribute("position"), positions);
       assert.equal(feedback.geometry.getAttribute("color"), colors);
       assert.ok(feedback.geometry.drawRange.count <= positions.count);
-      assert.equal(feedback.group.children.length, 2);
+      assert.equal(feedback.group.children.length, 3);
     }
   }
   assert.equal(visible, true);
   feedback.update(null);
   assert.equal(feedback.geometry.drawRange.count, 0);
+  assert.equal(pool.count, 0);
+});
+
+
+test("eight-level rock and decoration batches keep visible board submissions under 100", () => {
+  const { view, board } = sceneHarness();
+  view.setScenario(LEVELS[7]); view.setLayout(LEVELS[7].layout);
+  let meshes = 0, vertices = 0;
+  board.traverseVisible(node => { if (node instanceof THREE.Mesh) { meshes++; vertices += node.geometry.getAttribute("position").count; } });
+  assert.ok(meshes < 100, `visible board meshes: ${meshes}`);
+  assert.ok(vertices > 7000, "batching must retain terrain and house geometry");
+});
+
+test("camera movement does not resize the GPU buffer; viewport and quality changes still do", () => {
+  let resizes = 0, ratios = 0, ratio = 1;
+  const renderer = { domElement: { width:1280, height:720 }, getPixelRatio: () => ratio,
+    setPixelRatio: (next: number) => { ratio = next; ratios++; },
+    setSize: (width: number, height: number) => { resizes++; renderer.domElement.width = width * ratio; renderer.domElement.height = height * ratio; } };
+  for (let i=0;i<240;i++) updateRenderSize(renderer,1280,720,1);
+  assert.equal(resizes,0); assert.equal(ratios,0);
+  updateRenderSize(renderer,844,390,1);
+  assert.equal(resizes,1);
+  updateRenderSize(renderer,844,390,1.5);
+  assert.equal(resizes,2); assert.equal(ratios,1);
+  updateRenderSize(renderer,844,390,1.5);
+  assert.equal(resizes,2); assert.equal(ratios,1);
+});
+
+test("hovering inside the same cell reuses the sprinkler ghost", () => {
+  const { view, board } = sceneHarness();
+  view.setLayout(defaultLayout());
+  const ghost = new THREE.Group();
+  Object.assign(view, { ghost });
+  board.add(ghost);
+  view.preview(9, true, true, "station");
+  const shape = ghost.children[0] as THREE.Mesh;
+  let disposed = 0;
+  shape.geometry.addEventListener("dispose", () => disposed++);
+  for (let i=0;i<120;i++) view.preview(9, true, true, "station");
+  assert.equal(ghost.children[0], shape); assert.equal(disposed,0);
+  view.preview(10, true, true, "station");
+  assert.equal(disposed,1);
 });

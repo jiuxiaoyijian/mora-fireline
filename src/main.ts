@@ -1,7 +1,7 @@
 import "./style.css";
 import "./ui/title.css";
 import "./ui/campaign.css";
-import { LEVELS, newCampaign, readCampaign, awardStars } from "./sim/levels.ts";
+import { LEVELS, newCampaign, readCampaign, migrateCampaign, awardStars } from "./sim/levels.ts";
 import { GameAudio } from "./audio.ts";
 import { performanceRecorder } from "./performance.ts";
 import { GameView } from "./view.ts";
@@ -51,11 +51,16 @@ let coverage = false,
   routes = false;
 let toastTimer: ReturnType<typeof setTimeout>;
 // Campaign saves are independent: existing sandbox layouts remain untouched.
-const storageKey = "fireline-campaign-v1";
+const storageKey = "fireline-campaign-v2";
+let migratedProgress = false;
 let storageAvailable = true;
 try {
   const stored = localStorage.getItem(storageKey);
   if (stored) campaign = readCampaign(JSON.parse(stored));
+  else {
+    const legacy = localStorage.getItem("fireline-campaign-v1");
+    if (legacy) { campaign = migrateCampaign(JSON.parse(legacy)); migratedProgress = true; }
+  }
 } catch { storageAvailable = false; }
 level = LEVELS[campaign.current];
 layout = campaign.layouts[level.id]?.slice() ?? level.layout.slice();
@@ -89,7 +94,7 @@ function selectTool(next: Tool): void {
   const notes: Record<Tool, string> = {
     house: "查看 · 点击房屋查看材质、热量与湿润状态；房屋固定。",
     break: "防火带 · 1 点/格，拖动连接地面防线；挡不住飞火。",
-    station: "喷淋 · 4 点/座，两步内共享降温，湿润屋顶拦截飞火。",
+    station: "喷淋 · 4 点/座，相邻一圈降温；共享 2 次拦截储备，每 4 秒补 1 次。",
     erase: "拆除 · 仅拆设施、全额返还预算；恢复的草地仍可燃。",
   };
   el("tool-note").textContent = notes[next];
@@ -117,7 +122,8 @@ function hoverCell(i: number): void {
   el("hover-tip").hidden = i < 0;
   if (i < 0) return;
   const c = sim?.cells[i];
-  const status = c?.burned ? " · 已烧毁" : c?.burning ? " · 燃烧中" : c ? ` · 热量 ${Math.round(c.heat)}/${c.threshold}${c.wet ? " · 屋顶湿润" : ""}` : "";
+  const supply = sim?.supplies.find(s => s.cell === i);
+  const status = supply ? ` · 拦截储备 ${supply.charges}/2${supply.charges < 2 ? ` · ${Math.max(0, (supply.refillAt - sim!.tick) * RULES.dt).toFixed(1)} 秒后补 1 次` : ""}` : c?.burned ? " · 已烧毁" : c?.burning ? " · 燃烧中" : c ? ` · 热量 ${Math.round(c.heat)}/${c.threshold}${c.wet ? " · 当前有水压" : ""}` : "";
   el("hover-tip").textContent = `${address(i)} · ${cellName(i)}${status}${phase === "build" && !inspect && prospective?.error ? ` · ${prospective.error}` : ""}`;
 }
 function selectCell(i: number): void {
@@ -137,7 +143,7 @@ function selectCell(i: number): void {
   audio.play("place");
   view.setLayout(layout);
   view.feedback(i, true);
-  el("lesson-progress").textContent = `${address(i)} · ${tool === "erase" ? "已拆除，预算返还" : tool === "station" ? "喷淋已就位 · 青色为两步覆盖" : "防火带已铺设 · 检查两侧绕行"}`;
+  el("lesson-progress").textContent = `${address(i)} · ${tool === "erase" ? "已拆除，预算返还" : tool === "station" ? "喷淋已就位 · 青色为相邻一圈覆盖" : "防火带已铺设 · 检查两侧绕行"}`;
   storedLayout = true;
   save(); syncUI(); hoverCell(i);
 }
@@ -227,7 +233,7 @@ function syncUI(): void {
   el("mission-heading").textContent = level.name;
   el("mission-description").textContent = level.lesson;
   el("mission-targets").textContent = `${level.goal} 户目标 · ${n.homes} 户固定住宅 · ${level.budget} 点预算 · ${level.duration} 秒 · 三星：全保且预算 ≤ ${level.efficientBudget}`;
-  el("weather-plan").textContent = level.weather.map(w => `${w.at} 秒 ${w.direction === "east" ? "向东 →" : w.direction === "west" ? "← 向西" : "无风"}`).join(" / ") + (level.emberInterval ? ` · 每 ${level.emberInterval} 秒飞火` : " · 无飞火");
+  el("weather-plan").textContent = level.weather.map(w => `${w.at} 秒 ${w.direction === "east" ? "向东 →" : w.direction === "west" ? "← 向西" : "无风"}`).join(" / ") + (level.emberInterval ? ` · 每 ${level.emberInterval} 秒最多 ${level.emberVolley ?? 1} 枚飞火` : " · 无飞火");
   grid();
   updateTime();
 }
@@ -237,11 +243,14 @@ function updateTime(): void {
   el("progress").style.width = `${(time / level.duration) * 100}%`;
   const wind = weatherAt(level, time);
   el("wind-current").textContent = `风向 ${wind.direction === "east" ? "西 → 东" : wind.direction === "west" ? "东 → 西" : "无风"}`;
-  if (!sim) el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 青圈：屋顶湿润";
-  else if (phase === "finished") el("fire-feedback").textContent = `地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次`;
+  if (!sim || phase === "finished") el("water-pressure").hidden = true;
+  if (!sim) el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 屋顶蓝水滴：可拦截 · 金色：缺压";
+  else if (phase === "finished") el("fire-feedback").textContent = `地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次 · 水压耗尽漏防 ${sim.stats.dryHits} 次`;
   if (sim && (phase === "running" || phase === "paused")) {
     const incoming = sim.embers.map(e => `${address(e.target)} · ${((e.lands - sim!.tick) * RULES.dt).toFixed(1)}秒`).join(" / ");
-    el("fire-feedback").textContent = incoming ? `飞火将落在 ${incoming}` : `地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次`;
+    el("water-pressure").textContent = sim.supplies.map(s => `${address(s.cell)} ${s.charges}/2${s.charges < 2 ? `（${Math.max(0, (s.refillAt - sim!.tick) * RULES.dt).toFixed(1)}秒）` : ""}`).join(" · ");
+    el("water-pressure").hidden = !sim.supplies.length;
+    el("fire-feedback").textContent = incoming ? `飞火将落在 ${incoming}` : `地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次 · 水压耗尽漏防 ${sim.stats.dryHits} 次`;
     const r = result(sim);
     el("live-homes").textContent = `尚未起火 ${r.saved} 户 · 燃烧 ${r.burning} · 烧毁 ${r.destroyed}`;
   }
@@ -350,13 +359,24 @@ function finish(): void {
     save();
   }
   el("outcome-mission").textContent = r.success ? `${"★".repeat(stars)}${"☆".repeat(3 - stars)} · ${campaign.current === LEVELS.length - 1 ? "八次值守完成，感谢守护松风镇。" : "委托完成，下一关已解锁。"}` : `距离目标还差 ${level.goal - r.saved} 户，保留防线再修一处。`;
+  const ending = r.success && campaign.current === LEVELS.length - 1;
+  const completed = campaign.stars.filter(star => star > 0).length;
+  el("campaign-ending").hidden = !ending;
+  el("share-text").hidden = true;
+  el("share-status").textContent = "";
+  if (ending) {
+    el("outcome-heading").textContent = completed === LEVELS.length ? "八次值守，万家灯火。" : "终章守住了。";
+    el("outcome-mission").textContent = `已完成 ${completed} / 8 关 · 累计 ${campaign.stars.reduce((a,b) => a+b,0)} / 24 星 · 感谢守护松风镇。`;
+    el("outcome-tip").textContent = completed === LEVELS.length ? "分享成果，或从第一关重新挑战。" : "分享终章成果，或返回关卡补齐尚未完成的委托。";
+  }
+  el("outcome-edit").hidden = ending;
   el("next-level").hidden = !r.success;
   el("next-level").textContent = campaign.current === LEVELS.length - 1 ? "回看八次值守 →" : "前往下一关 →";
-  el("outcome-summary").textContent = `保住 ${r.saved} / ${counts(layout).homes} 户 · 预算 ${counts(layout).spent} / ${level.budget} · 地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次`;
+  el("outcome-summary").textContent = `保住 ${r.saved} / ${counts(layout).homes} 户 · 预算 ${counts(layout).spent} / ${level.budget} · 地面阻断 ${sim.stats.barriers} 处 · 飞火拦截 ${sim.stats.intercepted} 次 · 水压耗尽漏防 ${sim.stats.dryHits} 次`;
   const first = ignitions[0];
   const point = first ? coords(first.target) : null;
-  el("outcome-tip").textContent = point
-    ? `先回看 ${String.fromCharCode(65 + point.x)}${point.z + 1}：它在 ${(first.tick * RULES.dt).toFixed(1)} 秒最先起火。试着调整附近隔离或喷淋覆盖，再比较。`
+  if (!ending) el("outcome-tip").textContent = point
+    ? `先回看 ${String.fromCharCode(65 + point.x)}${point.z + 1}：它在 ${(first.tick * RULES.dt).toFixed(1)} 秒最先起火。${sim.stats.dryHits ? "喷淋储备耗尽过；先隔断正在产生飞火的草地跳板。" : "检查一格喷淋覆盖与火源方向，再调整防线。"}`
     : "所有住宅都未起火。下一次可以保留保护效果，尝试节省一点预算。";
   dialogs.open("outcome");
   syncUI();
@@ -468,6 +488,7 @@ document.addEventListener("visibilitychange", () => {
 let lastTime = performance.now(),
   uiElapsed = 0;
 function frame(now: number): void {
+  if (document.hidden) { lastTime = now; requestAnimationFrame(frame); return; }
   const frameStart = performance.now();
   const interval = now - lastTime;
   const elapsed = Math.min((now - lastTime) / 1000, 0.25);
@@ -533,9 +554,11 @@ function openTitle(): void {
     ? "火情已暂停 · 布局与进度保留在本次会话"
     : phase === "finished" ? "本次结果已保留 · 可以继续修改防线"
     : storedLayout ? "继续此浏览器保存的布局" : "先规划，再验证 · 同一场山火可反复演练";
+  if (migratedProgress) el("continue-note").textContent = "新版水压挑战 · 保留解锁，旧防线与成绩独立留存";
   dialogs.open("title-screen");
 }
 function enterTown(): void {
+  if (migratedProgress) { toast("已保留旧版关卡解锁；范围与地图已调整，本版防线和星级重新记录。旧存档仍保留。"); migratedProgress = false; }
   dialogs.closeAll();
   document.body.classList.remove("title-screen");
   if (phase === "finished") dialogs.open("outcome");
@@ -568,16 +591,16 @@ function openLevels(): void {
   el("level-list").innerHTML = LEVELS.map((stage, i) => `<button data-level="${i}" ${i > campaign.unlocked ? "disabled" : ""} class="level-choice ${i === campaign.current ? "current" : ""}"><span>${String(i + 1).padStart(2, "0")}</span><strong>${stage.name}</strong><small>${i > campaign.unlocked ? "完成前关解锁" : campaign.stars[i] ? "★".repeat(campaign.stars[i]) : "待挑战"}</small></button>`).join("");
   dialogs.open("level-select");
 }
-function loadLevel(i: number): void {
+function loadLevel(i: number, savePrevious = true): void {
   if (i < 0 || i > campaign.unlocked || i >= LEVELS.length) return;
-  save();
+  if (savePrevious) save();
   campaign.current = i; level = LEVELS[i];
   layout = campaign.layouts[level.id]?.slice() ?? level.layout.slice();
   phase = "build"; sim = null; history = []; previousResult = null; lastResult = null; accumulator = 0; speed = 1;
   dialogs.closeAll(); document.body.classList.remove("title-screen");
   view.setScenario(level); view.setLayout(layout); selectTool(level.tools[0]);
   el("lesson-progress").textContent = "先读委托，观察火源，再布置防线。";
-  el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 青圈：屋顶湿润";
+  el("fire-feedback").textContent = "橙线：地面受热 · 绿线：被阻断 · 屋顶蓝水滴：可拦截 · 金色：缺压";
   el("lesson-hint").hidden = i > 2;
   el("lesson-hint").textContent = level.hint;
   save(); syncUI(); el("primary").focus({ preventScroll: true });
@@ -589,6 +612,19 @@ el("level-list").addEventListener("click", event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-level]");
   if (button && !button.disabled) loadLevel(Number(button.dataset.level));
 });
+el("share-ending").addEventListener("click", async () => {
+  const completed = campaign.stars.filter(star => star > 0).length;
+  const text = `我在《火线街区》守住了松风镇！已完成 ${completed}/8 关，获得 ${campaign.stars.reduce((a,b) => a+b,0)}/24 星。来试试你的防线： https://jiuxiaoyijian.github.io/mora-fireline/`;
+  const field = el<HTMLTextAreaElement>("share-text");
+  field.value = text; field.hidden = false;
+  try { await navigator.clipboard.writeText(text); el("share-status").textContent = "分享文字已复制，可粘贴发送给朋友。"; }
+  catch { field.focus(); field.select(); el("share-status").textContent = "请选中下方文字手动复制分享。"; }
+});
+el("restart-campaign").addEventListener("click", () => confirmAction("重新开始八次值守？", "本版本的星级和防线将清空，从第一关重新开始。取消可保留当前成果。", () => {
+  try { localStorage.setItem(`${storageKey}-backup`, JSON.stringify(campaign)); } catch { toast("无法备份进度，请稍后重试。"); return; }
+  campaign = newCampaign(); migratedProgress = false;
+  loadLevel(0, false);
+}));
 el("next-level").addEventListener("click", () => campaign.current < LEVELS.length - 1 ? loadLevel(campaign.current + 1) : openLevels());
 el("hint-open").addEventListener("click", () => {
   el("lesson-hint").hidden = !el("lesson-hint").hidden;
@@ -676,3 +712,13 @@ save();
 syncUI();
 openTitle();
 requestAnimationFrame(frame);
+
+el("restore-campaign").addEventListener("click", () => {
+  try {
+    const backup = localStorage.getItem(`${storageKey}-backup`);
+    if (!backup) { toast("还没有重开前的备份。"); return; }
+    campaign = readCampaign(JSON.parse(backup));
+    loadLevel(campaign.current, false);
+    toast("已恢复上次重开前的成果。");
+  } catch { toast("备份不可读取，当前进度保持不变。"); }
+});

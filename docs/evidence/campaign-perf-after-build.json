@@ -1,0 +1,19 @@
+{
+  "viewport": "1280x720",
+  "dpr": 1,
+  "phases": {
+    "build": {
+      "samples": 600,
+      "fps": 32,
+      "frameP95": 31.6,
+      "cpuP95": 2.5,
+      "slowFrames": 0,
+      "calls": 84,
+      "triangles": 10510,
+      "geometries": 86
+    }
+  },
+  "layoutUpdates": 0,
+  "layoutMaxMs": 0,
+  "lastLayoutMs": []
+}

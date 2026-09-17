@@ -15,6 +15,19 @@ export class FireFeedback {
   private blue = new THREE.Color("#38b9db");
   private ring = new THREE.Mesh(new THREE.RingGeometry(.38, .46, 24), new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide }));
   private remaining = 0;
+  private markers = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4), new THREE.MeshBasicMaterial({ color: "#ffffff", depthTest: false }), 128);
+  private transform = new THREE.Object3D();
+  private amber = new THREE.Color("#eab653");
+  private marker(x: number, y: number, z: number, color: THREE.Color, scale = .11): void {
+    const i = this.markers.count;
+    if (i >= 128) return;
+    this.transform.position.set(x, y, z);
+    this.transform.scale.set(scale, scale * 1.8, scale);
+    this.transform.updateMatrix();
+    this.markers.setMatrixAt(i, this.transform.matrix);
+    this.markers.setColorAt(i, color);
+    this.markers.count++;
+  }
   constructor() {
     this.geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setAttribute("color", new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage));
@@ -24,7 +37,10 @@ export class FireFeedback {
     lines.renderOrder = 3;
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.visible = false;
-    this.group.add(lines, this.ring);
+    this.markers.count = 0;
+    this.markers.frustumCulled = false;
+    this.markers.renderOrder = 4;
+    this.group.add(lines, this.ring, this.markers);
   }
   private line(ax: number, ay: number, az: number, bx: number, by: number, bz: number, color: THREE.Color): void {
     if (this.used + 2 > 4096) return;
@@ -34,7 +50,28 @@ export class FireFeedback {
   }
   update(sim: Simulation | null): void {
     this.used = 0;
+    this.markers.count = 0;
     if (sim && !sim.done) {
+      sim.cells.forEach((cell, i) => {
+        if (cell.kind !== "house" || cell.burned || cell.burning || (!cell.wet && !sim.supplies.some(supply => supply.covered.includes(i)))) return;
+        const p = hexPosition(i), color = cell.wet ? this.blue : this.amber;
+        this.marker(p.x, 1.55, p.z, color, .14);
+        // Roof-height streams remain legible above building silhouettes.
+        for (const side of [-1, 1]) {
+          this.line(p.x + side * .32, 1.35, p.z, p.x + side * .44, .85, p.z, color);
+          this.line(p.x, 1.75, p.z, p.x + side * .13, 1.48, p.z, color);
+        }
+      });
+      for (const event of sim.events.slice(-24)) {
+        if ((event.type !== "ember-block" && event.type !== "ember-hit") || sim.tick - event.tick > 5) continue;
+        const p = hexPosition(event.target), color = event.type === "ember-block" ? this.blue : this.orange;
+        const radius = .2 + (sim.tick - event.tick) * .1;
+        for (let j = 0; j < 8; j++) {
+          const a = j * Math.PI / 4;
+          this.line(p.x + Math.cos(a) * radius, 1.3, p.z + Math.sin(a) * radius,
+            p.x + Math.cos(a) * (radius + .2), 1.55, p.z + Math.sin(a) * (radius + .2), color);
+        }
+      }
       for (const threat of sim.threats) {
         const a = hexPosition(threat.source), b = hexPosition(threat.target);
         const end = threat.blocked ? .5 : .8;
@@ -48,7 +85,9 @@ export class FireFeedback {
       for (const ember of sim.embers) {
         const a = hexPosition(ember.source), b = hexPosition(ember.target);
         const progress = (sim.tick - ember.launched) / (ember.lands - ember.launched);
-        const color = sim.cells[ember.target].wet ? this.blue : this.orange;
+        const color = this.orange;
+        this.marker(a.x + (b.x-a.x)*progress, .7 + Math.sin(progress*Math.PI)*1.5, a.z+(b.z-a.z)*progress, color);
+        this.marker(a.x + (b.x-a.x)*Math.max(0, progress-.08), .7 + Math.sin(Math.max(0, progress-.08)*Math.PI)*1.5, a.z+(b.z-a.z)*Math.max(0, progress-.08), color, .055);
         for (let j = 0; j < 16; j++) {
           const t = j / 16, u = (j + 1) / 16;
           if (u < progress) continue;
@@ -60,6 +99,8 @@ export class FireFeedback {
         }
       }
     }
+    this.markers.instanceMatrix.needsUpdate = true;
+    if (this.markers.instanceColor) this.markers.instanceColor.needsUpdate = true;
     this.geometry.setDrawRange(0, this.used);
     this.geometry.getAttribute("position").needsUpdate = true;
     this.geometry.getAttribute("color").needsUpdate = true;

@@ -9,7 +9,11 @@ export interface Scenario {
   tools: readonly Tool[]; houseTypes: Record<number, HouseType>;
   weather: readonly Weather[]; emberInterval: number; seed: number;
   sourceStarts?: Record<number, number>;
+  sprinkler?: { radius: number; cooling: number; charges: number; refillSeconds: number };
+  emberVolley?: number;
 }
+export const sprinklerRules = (scenario?: Scenario) => scenario?.sprinkler ?? { radius: 2, cooling: 72, charges: Infinity, refillSeconds: 0 };
+export interface Supply { cell: number; covered: number[]; charges: number; refillAt: number }
 export interface Ember { source: number; target: number; launched: number; lands: number }
 export interface Cell {
   kind: Kind;
@@ -37,7 +41,8 @@ export interface Simulation {
   scenario?: Scenario;
   embers: Ember[];
   blocked: Set<string>;
-  stats: { barriers: number; intercepted: number; emberHits: number };
+  stats: { barriers: number; intercepted: number; emberHits: number; dryHits: number };
+  supplies: Supply[];
   threats: { source: number; target: number; blocked: boolean }[];
 }
 export interface Result {
@@ -186,7 +191,8 @@ export function createSimulation(layout: Layout, scenario?: Scenario): Simulatio
     tick: 0,
     events: [],
     done: false,
-    scenario, embers: [], blocked: new Set(), stats: { barriers: 0, intercepted: 0, emberHits: 0 }, threats: [],
+    scenario, embers: [], blocked: new Set(), stats: { barriers: 0, intercepted: 0, emberHits: 0, dryHits: 0 }, threats: [],
+    supplies: layout.flatMap((kind, i) => kind === "station" ? [{ cell: i, covered: layout.flatMap((_, j) => distance(i, j) <= sprinklerRules(scenario).radius ? [j] : []), charges: sprinklerRules(scenario).charges, refillAt: 0 }] : []),
   };
 }
 function flammable(cell: Cell) {
@@ -198,9 +204,16 @@ export function step(sim: Simulation): void {
   const tick = sim.tick + 1;
   const weather = weatherAt(sim.scenario, sim.tick * RULES.dt);
   sim.threats = [];
+  const sprinkler = sprinklerRules(sim.scenario);
+  for (const supply of sim.supplies) {
+    if (supply.charges < sprinkler.charges && tick >= supply.refillAt) {
+      supply.charges++;
+      supply.refillAt = tick + Math.round(sprinkler.refillSeconds / RULES.dt);
+    }
+  }
   sim.cells.forEach((cell, i) => {
     if (cell.kind === "source" && sim.tick * RULES.dt >= (sim.scenario?.sourceStarts?.[i] ?? 0)) cell.burning = true;
-    cell.wet = cell.kind === "house" && sim.cells.some((other, j) => other.kind === "station" && distance(i, j) <= RULES.stationRadius);
+    cell.wet = cell.kind === "house" && sim.supplies.some(supply => supply.charges > 0 && supply.covered.includes(i));
   });
   const incoming = new Float64Array(64);
   const strongest = new Float64Array(64);
@@ -230,18 +243,9 @@ export function step(sim: Simulation): void {
       }
     }
   }
-  for (let i = 0; i < 64; i++) {
-    if (sim.cells[i].kind !== "station") continue;
-    const targets = sim.cells.flatMap((cell, j) =>
-      flammable(cell) &&
-      !cell.burning &&
-      (cell.heat > 0 || incoming[j] > 0) &&
-      distance(i, j) <= RULES.stationRadius
-        ? [j]
-        : [],
-    );
-    for (const j of targets)
-      cooling[j] += RULES.stationCapacity / targets.length;
+  for (const supply of sim.supplies) {
+    const targets = supply.covered.filter(j => flammable(sim.cells[j]) && !sim.cells[j].burning && (sim.cells[j].heat > 0 || incoming[j] > 0));
+    for (const j of targets) cooling[j] += sprinkler.cooling / targets.length;
   }
   // Seeded, telegraphed embers: retries use the same weather and selection sequence.
   const interval = sim.scenario?.emberInterval ?? 0;
@@ -255,23 +259,31 @@ export function step(sim: Simulation): void {
           && (weather.direction === "east" ? dx > 0 : dx < 0)) candidates.push({ source:i, target:j });
       });
     });
-    if (candidates.length) {
-      const hash = Math.imul((sim.scenario!.seed ^ tick) >>> 0, 1664525) + 1013904223;
+    for (let n = 0; n < (sim.scenario?.emberVolley ?? 1) && candidates.length; n++) {
+      const hash = Math.imul((sim.scenario!.seed ^ tick ^ (n * 101)) >>> 0, 1664525) + 1013904223;
       const selected = candidates[(hash >>> 0) % candidates.length];
       sim.embers.push({ ...selected, launched:tick, lands:tick + 15 });
       sim.events.push({ ...selected, tick, type:"ember-warning" });
+      for (let i = candidates.length - 1; i >= 0; i--) if (candidates[i].target === selected.target || candidates[i].source === selected.source) candidates.splice(i, 1);
     }
   }
   const emberSources = new Map<number, number>();
   for (const ember of sim.embers.filter(e => e.lands <= tick)) {
     const cell = sim.cells[ember.target];
     if (cell.burning || cell.burned) continue;
-    if (cell.wet) { sim.stats.intercepted++; sim.events.push({ ...ember, tick, type:"ember-block" }); }
-    else { cell.heat += 65; emberSources.set(ember.target, ember.source); sim.stats.emberHits++; sim.events.push({ ...ember, tick, type:"ember-hit" }); }
+    const supply = sim.supplies.filter(s => s.covered.includes(ember.target) && s.charges > 0).sort((a,b) => b.charges - a.charges || a.cell - b.cell)[0];
+    if (supply) {
+      if (supply.charges === sprinkler.charges) supply.refillAt = tick + Math.round(sprinkler.refillSeconds / RULES.dt);
+      supply.charges--;
+      sim.stats.intercepted++; sim.events.push({ ...ember, tick, type:"ember-block" });
+    }
+    else {
+      if (sim.supplies.some(s => s.covered.includes(ember.target))) sim.stats.dryHits++; cell.heat += 65; emberSources.set(ember.target, ember.source); sim.stats.emberHits++; sim.events.push({ ...ember, tick, type:"ember-hit" }); }
   }
   sim.embers = sim.embers.filter(e => e.lands > tick);
   sim.cells.forEach((cell, i) => {
     cell.cooling = cooling[i];
+    cell.wet = cell.kind === "house" && sim.supplies.some(supply => supply.charges > 0 && supply.covered.includes(i));
     if (cell.burning && cell.kind !== "source") {
       cell.fuel = Math.max(0, cell.fuel - RULES.dt);
       if (cell.kind === "house")

@@ -1,8 +1,10 @@
 import * as THREE from "three";
+import { batchDecorations, mergeColoredMeshes } from "./board-batches.ts";
 import { FireFeedback } from "./fire-feedback.ts";
+import { updateRenderSize } from "./render-size.ts";
 import { PointerGesture } from "./input/gesture.ts";
 import type { Point } from "./input/gesture.ts";
-import { RULES, buildable, distance } from "./sim/model.ts";
+import { sprinklerRules, buildable, distance } from "./sim/model.ts";
 import { HEX_RADIUS, hexPosition } from "./sim/hex.ts";
 import { addLandscape } from "./landscape.ts";
 import { addWaterscape } from "./waterscape.ts";
@@ -12,6 +14,8 @@ import type { Layout, Simulation, Tool, Scenario } from "./sim/model.ts";
 type SelectHandler = (index: number) => void;
 export class GameView {
   private scenario?: Scenario;
+  private rockBatch?: THREE.Mesh;
+  private previewKey = "";
   private fireFeedback = new FireFeedback();
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 160);
@@ -234,12 +238,33 @@ export class GameView {
     this.lastTick = -1;
     this.layout = layout.slice();
     this.previewCell = -1;
+    this.previewKey = "";
     this.hover.visible = false;
     this.ghost.visible = false;
     this.clearRoutes();
     this.fireFeedback?.update(null);
+    const rocksChanged = !this.rockBatch || layout.some((kind, i) => (kind === "stone" || oldLayout[i] === "stone") && kind !== oldLayout[i]);
     layout.forEach((kind, i) => {
-      if (!reset && oldLayout[i] === kind) return;
+      if (oldLayout[i] === kind) {
+        if (reset) {
+          const body = this.bodies[i];
+          if (body && kind === "house") (body.material as THREE.MeshStandardMaterial).color.set(this.scenario?.houseTypes[i] === "brick" ? "#b5b9b4" : "#f5e4c5");
+          (this.tiles[i].material as THREE.MeshStandardMaterial).color.set(kind === "stone" ? "#aaa894" : kind === "break" ? "#dbccb4" : "#9eae78");
+          this.flames[i].visible = kind === "source" && !this.scenario?.sourceStarts?.[i];
+          this.water[i].visible = false;
+          if (this.spray[i]) this.spray[i]!.visible = false;
+          this.groups[i].userData.burned = false;
+          this.groups[i].traverse(child => {
+            if (child.userData.originalY !== undefined) child.position.y = child.userData.originalY;
+            if (child.userData.originalScaleY !== undefined) child.scale.y = child.userData.originalScaleY;
+            if (child.userData.window && child instanceof THREE.Mesh) {
+              const mat = child.material as THREE.MeshStandardMaterial;
+              mat.color.set("#456960"); mat.emissive.set("#000000");
+            }
+          });
+        }
+        return;
+      }
       if (this.groups[i]) {
         this.disposeObject(this.groups[i]);
         this.board.remove(this.groups[i]);
@@ -376,11 +401,13 @@ export class GameView {
         home.rotation.y = ((i % 3) - 1) * 0.16;
         home.position.set(Math.sin(i * 3) * 0.065, 0, Math.cos(i * 2) * 0.045);
         home.scale.setScalar(0.88 + (i % 3) * 0.05);
+        batchDecorations(home, body ? [body] : []);
         group.add(home);
         const path = this.box(0.17, 0.008, 0.2, "#c6ba91");
         path.position.set(home.position.x, 0.035, 0.47);
         group.add(path);
       }
+      if (kind !== "house" && kind !== "stone") batchDecorations(group, [tile, ...(body ? [body] : [])]);
       const flame = new THREE.Group();
       for (let j = 0; j < 3; j++) {
         const cone = new THREE.Mesh(
@@ -390,6 +417,7 @@ export class GameView {
         cone.position.set((j - 1) * 0.16, 0.45 + j * 0.07, (j % 2) * 0.16);
         flame.add(cone);
       }
+      batchDecorations(flame, [], true);
       flame.position.y = kind === "house" ? 0.32 : 0;
       flame.visible = kind === "source" && !this.scenario?.sourceStarts?.[i];
       group.add(flame);
@@ -429,6 +457,18 @@ export class GameView {
       this.groups[i] = group;
       this.board.add(group);
     });
+    // Immutable rock cells (terrain + pebbles) share one draw call per level.
+    if (rocksChanged) {
+      if (this.rockBatch) { this.disposeObject(this.rockBatch); this.board.remove(this.rockBatch); }
+      const rocks: THREE.Mesh[] = [];
+      this.groups.forEach((group, i) => {
+        if (layout[i] !== "stone") return;
+        group.traverse(node => { if (node instanceof THREE.Mesh && node.material instanceof THREE.MeshStandardMaterial) rocks.push(node); });
+        group.visible = false;
+      });
+      this.rockBatch = mergeColoredMeshes(this.board, rocks) ?? undefined;
+      if (this.rockBatch) this.board.add(this.rockBatch);
+    }
     this.coverage(this.hasCoverage);
     this.pickables = [...this.tiles, ...this.bodies.filter((body): body is THREE.Mesh => body !== null)];
     this.renderer.shadowMap.needsUpdate = true;
@@ -436,6 +476,9 @@ export class GameView {
   }
   metrics() { return { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles, geometries: this.renderer.info.memory.geometries }; }
   preview(i: number, valid: boolean, station: boolean, tool: Tool = "break"): void {
+    const key = `${i}/${valid}/${station}/${tool}`;
+    if (this.previewKey === key) return;
+    this.previewKey = key;
     this.hover.visible = i >= 0;
     if (i >= 0) {
       const { x, z } = hexPosition(i);
@@ -461,13 +504,13 @@ export class GameView {
     this.hasCoverage = show;
     this.halos.forEach((halo, i) => {
       halo.visible =
-        buildable(i) &&
+        (buildable(i) || this.layout[i] === "house") &&
         ((this.previewCell >= 0 &&
-          distance(i, this.previewCell) <= RULES.stationRadius) ||
+          distance(i, this.previewCell) <= sprinklerRules(this.scenario).radius) ||
           (show &&
             this.layout.some(
               (kind, j) =>
-                kind === "station" && distance(i, j) <= RULES.stationRadius,
+                kind === "station" && distance(i, j) <= sprinklerRules(this.scenario).radius,
             )));
     });
   }
@@ -492,16 +535,17 @@ export class GameView {
       sim.cells.forEach((cell, i) => {
         const spray = this.spray[i];
         if (spray) {
-          spray.visible = !sim.done && sim.cells.some((target, j) => target.cooling > 0 && distance(i, j) <= RULES.stationRadius);
+          if (stateChanged) spray.visible = !sim.done && !!sim.supplies.find(supply => supply.cell === i)?.covered.some(j => sim.cells[j].cooling > 0);
           if (!this.reducedMotion) spray.rotation.y = this.clock * 0.4;
         }
-        this.flames[i].visible = cell.burning;
-        this.water[i].visible =
+        if (stateChanged) this.flames[i].visible = cell.burning;
+        if (stateChanged) this.water[i].visible =
           !sim.done && (cell.cooling > 0 || cell.wet) && !cell.burning && !cell.burned;
+        if (stateChanged) (this.water[i].material as THREE.MeshBasicMaterial).color.set(cell.kind === "house" && !cell.wet ? "#d9a854" : "#65d5e5");
         const pulse = this.reducedMotion
           ? 1
           : 0.92 + Math.sin(this.clock * 5 + i) * 0.08;
-        this.water[i].scale.setScalar(pulse);
+        if (this.water[i].visible) this.water[i].scale.setScalar(pulse);
         if (cell.burning && !this.reducedMotion)
           this.flames[i].scale.y = 0.9 + Math.sin(this.clock * 8 + i) * 0.16;
         const body = this.bodies[i];
@@ -633,7 +677,7 @@ export class GameView {
     this.camera.updateProjectionMatrix();
     this.guides.visible = this.hasGuides;
     const scale = this.host.getBoundingClientRect().width / width;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.performanceQuality ? 1 : 1.5) * scale);
-    this.renderer.setSize(width, height, false);
+    const pixelRatio = Math.min(window.devicePixelRatio, this.performanceQuality ? 1 : 1.5) * scale;
+    updateRenderSize(this.renderer, width, height, pixelRatio);
   }
 }

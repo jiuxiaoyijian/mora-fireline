@@ -56,3 +56,13 @@
   #game-stage[data-phase=build] .fire-feedback { display:none; }
   #game-stage:not([data-phase=build]) .fire-feedback { bottom:calc(var(--safe-bottom) + 150px); }
 }
+.water-pressure { position:absolute; z-index:3; left:var(--safe-left); top:160px; max-width:360px; padding:8px 12px; border-radius:8px; background:#e0f2efed; color:#32645e; font-size:12px; }
+.water-pressure::before { content:'拦截储备 · '; font-weight:bold; }
+#game-stage[data-phase=paused] .water-pressure { top:350px; }
+@media(max-width:680px) { .water-pressure { top:auto; bottom:calc(var(--safe-bottom) + 190px); max-width:95%; font-size:11px; } #game-stage[data-phase=paused] .water-pressure { top:auto; } }
+@media(max-height:540px) and (min-width:681px) { .water-pressure { top:155px; max-width:210px; } #game-stage[data-phase=paused] .water-pressure { top:285px; } }
+
+#campaign-ending { padding: 12px; background: #e3efd9; border-radius: 10px; }
+#campaign-ending button { margin: 4px; }
+#share-text { width: 100%; min-height: 84px; box-sizing: border-box; }
+.outcome-card { max-height: 88%; overflow-y: auto; }
